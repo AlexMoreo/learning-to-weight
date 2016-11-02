@@ -110,5 +110,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
+    flags.DEFINE_boolean('plot', True, 'Plots the current function model.')
+
     tf.app.run()
 
