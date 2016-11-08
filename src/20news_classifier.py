@@ -1,5 +1,6 @@
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
 import numpy as np
 import tensorflow as tf
@@ -7,12 +8,24 @@ from helpers import *
 from helpers import *
 from pprint import pprint
 
-
+#TODO: count number of parameters
+#TODO: filter headers, footers, quotes, stop-words, and clean empty docs
+#TODO: take weights in tfidf into account
+#TODO: hashing + dimension_embeddings
+#TODO: sup weighting
+#TODO: clustering and two losses
 class Dataset:
-    def __init__(self, valid_samples=1000, categories=None):
+    def __init__(self, valid_samples=1000, categories=None, vectorize='hashing'):
+        err_exit(vectorize not in ['hashing', 'tfidf', 'count'], err_msg='Param vectorize should be one in "hashing", "tfidf", or "count"')
         self.train = fetch_20newsgroups(subset='train', categories=categories)#,remove=('headers', 'footers', 'quotes'))
         self.test  = fetch_20newsgroups(subset='test', categories=categories)#, remove=('headers', 'footers', 'quotes'))
-        vectorizer = TfidfVectorizer()
+        if vectorize == 'hashing':
+            vectorizer = HashingVectorizer(n_features=10000, stop_words='english')
+        elif vectorize == 'tfidf':
+            vectorizer = TfidfVectorizer(stop_words='english')
+        else:
+            vectorizer = CountVectorizer(stop_words='english')
+        #vectorizer = HashingVectorizer(n_features=10000, stop_words='english')
         self.train_vec = vectorizer.fit_transform(self.train.data)
         self.train_vec.sort_indices()
         self.test_vec = vectorizer.transform(self.test.data)
@@ -61,15 +74,15 @@ class Dataset:
         return self.train_vec.shape[1]
 
 def main(argv=None):
-    #categories = ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    categories = ['alt.atheism', 'talk.religion.misc']
-    data = Dataset(categories=categories)
+    categories = ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
+    #categories = ['alt.atheism', 'talk.religion.misc']
+    data = Dataset(categories=categories, vectorize='tfidf')
 
     x_size = data.num_features()
     n_classes = data.num_categories()
     embedding_size = 500
-    hidden_sizes = [1000]
-    drop_k_p=0.9
+    hidden_sizes = [1000, 500]
+    drop_k_p=0.5
 
     graph = tf.Graph()
     with graph.as_default():
@@ -112,6 +125,8 @@ def main(argv=None):
     show_step = 100
     valid_step = show_step * 10
     with tf.Session(graph=graph) as session:
+        n_params = count_trainable_parameters()
+        print ('Number of model parameters: %.2fM' % (n_params/1E6))
         tf.initialize_all_variables().run()
         l_ave=0.0
         offset = 0

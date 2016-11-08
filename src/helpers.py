@@ -92,6 +92,16 @@ class TensorboardData:
             self.train_writer.close()
             self.valid_writer.close()
 
+def count_trainable_parameters():
+    total_parameters = 0
+    for variable in tf.trainable_variables():
+        shape = variable.get_shape()
+        variable_parametes = 1
+        for dim in shape:
+            variable_parametes *= dim.value
+        total_parameters += variable_parametes
+    return total_parameters
+
 
 
 
