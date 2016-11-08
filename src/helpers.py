@@ -28,10 +28,29 @@ def savemodel(session, step, saver, checkpoint_dir, run_name, posfix=""):
     print('[Done]')
     return save_path
 
-def projection_weights(orig_size, target_size, name):
+def projection_weights(orig_size, target_size, name=''):
     weight = tf.Variable(tf.truncated_normal([orig_size, target_size], stddev=1.0 / math.sqrt(target_size)), name=name + '/weight')
     bias = tf.Variable(tf.zeros([target_size]), name=name + '/bias')
     return weight, bias
+
+def ff_multilayer(ini_layer, hidden_sizes, non_linear_function=tf.nn.relu, keep_prob=None, name=''):
+    current_layer = ini_layer
+    for i, hidden_dim in enumerate(hidden_sizes):
+        current_layer = add_layer(current_layer, hidden_dim, non_linear_function=non_linear_function, keep_prob=keep_prob, name=name+'layer' + str(i))
+    return current_layer
+
+def add_linear_layer(layer, hidden_size, keep_prob=None, name=''):
+    return add_layer(layer, hidden_size, non_linear_function=None, keep_prob=keep_prob, name=name)
+
+def add_layer(layer, hidden_size, non_linear_function=tf.nn.relu, keep_prob=None, name=''):
+    weight, bias = projection_weights(layer.get_shape().as_list()[1], hidden_size, name=name)
+    activation = tf.matmul(layer, weight) + bias
+    if non_linear_function is not None:
+        activation = non_linear_function(activation)
+    if keep_prob is None:
+        return activation
+    else:
+        return tf.nn.dropout(activation, keep_prob=keep_prob)
 
 
 #--------------------------------------------------------------
