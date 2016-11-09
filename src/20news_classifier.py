@@ -10,14 +10,13 @@ from helpers import *
 from pprint import pprint
 import time
 
-#TODO: filter headers, footers, quotes, stop-words, and clean empty docs
 #TODO: sup weighting
 #TODO: clustering and two losses
 class Dataset:
     def __init__(self, valid_samples=1000, categories=None, vectorize='hashing'):
         err_exit(vectorize not in ['hashing', 'tfidf', 'count'], err_msg='Param vectorize should be one in "hashing", "tfidf", or "count"')
-        self.train = fetch_20newsgroups(subset='train', categories=categories)#, remove=('headers', 'footers', 'quotes'))
-        self.test  = fetch_20newsgroups(subset='test',  categories=categories)#, remove=('headers', 'footers', 'quotes'))
+        self.train = fetch_20newsgroups(subset='train', categories=categories, remove=('headers', 'footers', 'quotes'))
+        self.test  = fetch_20newsgroups(subset='test',  categories=categories, remove=('headers', 'footers', 'quotes'))
         self.send_weights=False
         if vectorize == 'hashing':
             vectorizer = HashingVectorizer(n_features=10000, stop_words='english')
@@ -33,14 +32,17 @@ class Dataset:
         self.valid_samples=valid_samples
         self.epoch=0
         self.offset=0
-        self.train_indexes=self.get_train_index()
+        self.train_indexes=self.get_doc_indexes(self.train_vec[:self.valid_offset()])
+        self.valid_indexes = self.get_doc_indexes(self.train_vec[self.valid_offset():], offset=self.valid_offset())
+        self.test_indexes = self.get_doc_indexes(self.test_vec)
 
-    def get_train_index(self):
-        all_indexes = np.arange(self.valid_offset())
-        return [i for i in all_indexes if self.train_vec[i].nnz>0]
+    #virtually remove invalid documents (documents without any feature)
+    def get_doc_indexes(self, vector_set, offset=0):
+        all_indexes = np.arange(offset, offset + vector_set.shape[0])
+        return [i for i in all_indexes if vector_set[i-offset].nnz>0]
 
     def valid_offset(self):
-        return self.num_tr_docs()-self.valid_samples
+        return self.num_devel_docs()-self.valid_samples
 
     def get_index_values(self, batch):
         num_indices = len(batch.nonzero()[0])
@@ -52,31 +54,31 @@ class Dataset:
         return batch.data if self.send_weights else []
 
     def train_batch(self, batch_size=64):
-        to_pos = min(self.offset + batch_size, self.valid_offset())
+        to_pos = min(self.offset + batch_size, self.num_tr_documents())
         batch = self.train_vec[self.train_indexes[self.offset:to_pos]]
         indices, values = self.get_index_values(batch)
         weights = self.get_weights(batch)
         labels = self.train.target[self.train_indexes[self.offset:to_pos]]
         self.offset = self.offset + batch_size
-        if self.offset >= self.valid_offset():
+        if self.offset >= self.num_tr_documents():
             self.offset = 0
             self.epoch += 1
             random.shuffle(self.train_indexes)
         return indices, values, weights, labels
 
     def val_batch(self):
-        batch = self.train_vec[self.valid_offset() : ]
+        batch = self.train_vec[self.valid_indexes]
         indices, values = self.get_index_values(batch)
         weights = self.get_weights(batch)
-        labels = self.train.target[self.valid_offset() : ]
+        labels = self.train.target[self.valid_indexes]
         return indices, values, weights, labels
 
     def test_batch(self):
-        indices, values = self.get_index_values(self.test_vec)
+        indices, values = self.get_index_values(self.test_vec[self.test_indexes])
         weights = self.get_weights(self.test_vec)
-        return indices, values, weights, self.test.target
+        return indices, values, weights, self.test.target[self.test_indexes]
 
-    def num_tr_docs(self):
+    def num_devel_docs(self):
         return len(self.train.filenames)
 
     def num_categories(self):
@@ -85,15 +87,28 @@ class Dataset:
     def num_features(self):
         return self.train_vec.shape[1]
 
+    def num_tr_documents(self):
+        return len(self.train_indexes)
+
+    def num_val_documents(self):
+        return len(self.valid_indexes)
+
+    def num_test_documents(self):
+        return len(self.test_indexes)
+
 def main(argv=None):
     categories = ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     #categories = ['alt.atheism', 'talk.religion.misc']
     data = Dataset(categories=categories, vectorize='hashing')
+    print("|Tr|=%d" % data.num_tr_documents())
+    print("|Va|=%d" % data.num_val_documents())
+    print("|Te|=%d" % data.num_test_documents())
+    print("|C|=%d" % data.num_categories())
 
     x_size = data.num_features()
     n_classes = data.num_categories()
     embedding_size = 500
-    hidden_sizes = [500, 250]
+    hidden_sizes = [500,50]
     drop_k_p=0.5
 
     graph = tf.Graph()
@@ -119,7 +134,7 @@ def main(argv=None):
       #accuracy = tf.contrib.metrics.accuracy(y_, y)
 
       op_step = tf.Variable(0, trainable=False)
-      rate = tf.train.exponential_decay(0.1, op_step, 1, 0.9999)
+      rate = tf.train.exponential_decay(0.01, op_step, 1, 0.9999)
       optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
 
 
@@ -145,6 +160,7 @@ def main(argv=None):
             if step % show_step == 0:
                 print('[step=%d][ep=%d][lr=%.5f] loss=%.7f' % (step, data.epoch, lr, l_ave / show_step))
                 l_ave = 0.0
+
 
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
