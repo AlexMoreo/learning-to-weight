@@ -17,8 +17,8 @@ def main(argv=None):
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat='talk.religion.misc')
     if data.vectorize=='count':
         print('L1-normalize')
-        normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-        normalize(data.test_vec, norm='l1', axis=1, copy=False)
+        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d" % data.num_tr_documents())
     print("|Va|=%d" % data.num_val_documents())
     print("|Te|=%d" % data.num_test_documents())
@@ -32,7 +32,6 @@ def main(argv=None):
     feat_corr_info = np.concatenate([[sup_i.tpr(), sup_i.fpr()] for sup_i in sup])
     #feat_corr_info = np.concatenate([[sup_i.p_tp(), sup_i.p_fp(), sup_i.p_fn(), sup_i.p_tn()] for sup_i in sup])
     info_by_feat = len(feat_corr_info) / data.num_features()
-    print('Creating the graph')
 
     x_size = data.num_features()
     batch_size = 32
@@ -89,7 +88,7 @@ def main(argv=None):
         x_, y_ = batch_parts
         return {x: x_, y: y_}
 
-    show_step = 1
+    show_step = 100
     valid_step = show_step * 10
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
