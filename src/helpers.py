@@ -29,8 +29,8 @@ def savemodel(session, step, saver, checkpoint_dir, run_name, posfix=""):
     return save_path
 
 def projection_weights(orig_size, target_size, name=''):
-    weight = tf.Variable(tf.truncated_normal([orig_size, target_size], stddev=1.0 / math.sqrt(target_size)), name=name + '/weight')
-    bias = tf.Variable(tf.zeros([target_size]), name=name + '/bias')
+    weight = tf.Variable(tf.truncated_normal([orig_size, target_size], stddev=1.0 / math.sqrt(target_size)), name=name + 'weight')
+    bias = tf.Variable(tf.zeros([target_size]), name=name + 'bias')
     return weight, bias
 
 def ff_multilayer(ini_layer, hidden_sizes, non_linear_function=tf.nn.relu, keep_prob=None, name=''):
@@ -51,6 +51,7 @@ def add_layer(layer, hidden_size, non_linear_function=tf.nn.relu, keep_prob=None
         return activation
     else:
         return tf.nn.dropout(activation, keep_prob=keep_prob)
+
 
 
 #--------------------------------------------------------------
