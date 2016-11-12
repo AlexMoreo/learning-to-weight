@@ -123,12 +123,10 @@ class Dataset:
         return batch_rep, labels
 
     def feat_sup_statistics(self, feat_index, cat_label=1):
-        #t=time.time()
         feat_vec = self.devel_vec[:,feat_index]
         if cat_label not in self.cat_vec_dic:
             self.cat_vec_dic[cat_label] = [(1 if x==cat_label else 0) for x in self.devel.target]
         cat_vec  = self.cat_vec_dic[cat_label]
-        d = len(feat_vec)
         tp, tn, fp, fn = 0, 0, 0, 0
         for i in range(len(feat_vec)):
             if feat_vec[i]>0:
@@ -137,11 +135,6 @@ class Dataset:
             else:
                 if cat_vec[i] > 0: fn += 1
                 else: tn += 1
-        #tp = sum([1 for i in range(d) if feat_vec[i] * cat_vec[i] > 0])
-        #tn = sum([1 for i in range(d) if feat_vec[i] + cat_vec[i] == 0])
-        #fp = sum([1 for i in range(d) if feat_vec[i] > 0.0 and cat_vec[i] == 0])
-        #fn = sum([1 for i in range(d) if feat_vec[i] == 0.0 and cat_vec[i] > 0])
-        #print(time.time()-t)
         return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
 
     def num_devel_docs(self):
