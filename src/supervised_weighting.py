@@ -65,7 +65,8 @@ def main(argv=None):
           return idf
 
       weighted_layer = tf.mul(tf_like(x), idf_like())
-      logits = tf.squeeze(add_linear_layer(weighted_layer, 1, name='out_logistic_function'))
+      normalized = tf.nn.l2_normalize(weighted_layer, dim=1)
+      logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
 
       loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits,y))
 
