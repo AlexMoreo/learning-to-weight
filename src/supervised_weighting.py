@@ -105,7 +105,7 @@ def main(argv=None):
         return acc, f1, p, r, improvement
 
 
-    show_step = 10
+    show_step = 100
     valid_step = show_step * 10
     last_improvement = 0
     early_stop_steps = 10
