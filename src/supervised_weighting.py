@@ -75,7 +75,6 @@ def main(argv=None):
       prediction = tf.round(y_) # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
       correct_prediction = tf.equal(y, prediction)
       accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
-      #accuracy = tf.contrib.metrics.accuracy(y_, y)
 
       #op_step = tf.Variable(0, trainable=False)
       #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
@@ -89,8 +88,26 @@ def main(argv=None):
         x_, y_ = batch_parts
         return {x: x_, y: y_}
 
+    best_val = dict({'acc':0.0, 'f1':0.0, 'p':0.0, 'r':0.0})
+    best_test = dict({'acc': 0.0, 'f1': 0.0, 'p': 0.0, 'r': 0.0})
+
+    def evaluation(batch, best_score):
+        eval_dict = as_feed_dict(batch)
+        acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
+        f1 = f1_score(eval_dict[y], predictions, average='binary', pos_label=1)
+        p = precision_score(eval_dict[y], predictions, average='binary', pos_label=1)
+        r = recall_score(eval_dict[y], predictions, average='binary', pos_label=1)
+        improvement = (acc > best_score['acc']) or (f1 > best_score['f1']) or (p > best_score['p']) or (r > best_score['r'])
+        best_score['acc'] = max(acc, best_score['acc'])
+        best_score['f1'] = max(f1, best_score['f1'])
+        best_score['p'] = max(p, best_score['p'])
+        best_score['r'] = max(r, best_score['r'])
+        return acc, f1, p, r, improvement
+
+
     show_step = 100
     valid_step = show_step * 10
+    last_improvement = 0
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
@@ -109,17 +126,27 @@ def main(argv=None):
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
 
-                val_acc = accuracy.eval(feed_dict=as_feed_dict(data.val_batch()))
-                print('Validation accuracy %.3f%%' % val_acc)
+                acc, f1, p, r, improves = evaluation(data.val_batch(), best_score=best_val)
 
-                test_dict = as_feed_dict(data.test_batch())
-                test_acc, predictions = session.run([accuracy, prediction], feed_dict=test_dict)
-                f1 = f1_score(test_dict[y], predictions, average='binary', pos_label=1)
-                p  = precision_score(test_dict[y], predictions, average='binary', pos_label=1)
-                r  = recall_score(test_dict[y], predictions, average='binary', pos_label=1)
-                print('Test [accuracy=%.3f%%, f1-score=%.3f, p=%.3f, r=%.3f' % (test_acc, f1, p, r))
+                print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
+
+
+                #test_dict = as_feed_dict(data.test_batch())
+                #test_acc, predictions = session.run([accuracy, prediction], feed_dict=test_dict)
+                #f1 = f1_score(test_dict[y], predictions, average='binary', pos_label=1)
+                #p  = precision_score(test_dict[y], predictions, average='binary', pos_label=1)
+                #r  = recall_score(test_dict[y], predictions, average='binary', pos_label=1)
+                #print('Test [accuracy=%.3f%%, f1-score=%.3f, p=%.3f, r=%.3f' % (test_acc, f1, p, r))
 
                 timeref = time.time()
+
+            #early stop if not improves after 10 validations
+            if last_improvement >= 10:
+                #savemodel()
+
+                break
+
+
 
 #-------------------------------------
 if __name__ == '__main__':
