@@ -7,6 +7,7 @@ from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
+from sklearn import svm
 
 #TODO: convolution on the supervised feat-cat statistics
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
@@ -128,17 +129,8 @@ def main(argv=None):
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
 
                 acc, f1, p, r, improves = evaluation(data.val_batch(), best_score=best_val)
-
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
-
-
-                #test_dict = as_feed_dict(data.test_batch())
-                #test_acc, predictions = session.run([accuracy, prediction], feed_dict=test_dict)
-                #f1 = f1_score(test_dict[y], predictions, average='binary', pos_label=1)
-                #p  = precision_score(test_dict[y], predictions, average='binary', pos_label=1)
-                #r  = recall_score(test_dict[y], predictions, average='binary', pos_label=1)
-                #print('Test [accuracy=%.3f%%, f1-score=%.3f, p=%.3f, r=%.3f' % (test_acc, f1, p, r))
 
                 timeref = time.time()
 
@@ -151,6 +143,22 @@ def main(argv=None):
         print 'Test evaluation:'
         acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
         print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
+
+        print 'Weighting documents'
+        devel_x, devel_y = data.get_devel_set()
+        devel_x_weighted = normalized.eval(feed_dict={x:devel_x})
+        test_x, test_y   = data.test_batch()
+        test_x_weighted  = normalized.eval(feed_dict={x:test_x})
+
+        C=1.0
+        lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
+
+        predictions = lin_svc.predict(test_x)
+        acc = accuracy_score(test_y, predictions)
+        f1 = f1_score(test_y, predictions, average='binary', pos_label=1)
+        p = precision_score(test_y, predictions, average='binary', pos_label=1)
+        r = recall_score(test_y, predictions, average='binary', pos_label=1)
+        print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
 
 
 
