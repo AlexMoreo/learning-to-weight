@@ -9,6 +9,7 @@ from sklearn.preprocessing import normalize
 import sys
 from sklearn import svm
 
+#TODO: save weights only if f1 improves
 #TODO: save weights of the best performing configuration, not the last one after early-stop
 #TODO: convolution on the supervised feat-cat statistics
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
@@ -28,6 +29,8 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_ategories())))
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
     print("Vectorizer=%s" % data.vectorize)
+
+    checkpoint_dir='.'
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -81,7 +84,9 @@ def main(argv=None):
       #op_step = tf.Variable(0, trainable=False)
       #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
       #optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
-      optimizer = tf.train.AdamOptimizer(learning_rate=.001).minimize(loss) # 0.001
+      optimizer = tf.train.AdamOptimizer(learning_rate=.005).minimize(loss) # 0.001
+
+      saver = tf.train.Saver(max_to_keep=1)
 
     # ---------------------------------------------------------------------
     # Graph run
@@ -132,16 +137,18 @@ def main(argv=None):
                 acc, f1, p, r, improves = evaluation(data.val_batch(), best_score=best_val)
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
+                if improves:
+                    savemodel(session, step, saver, checkpoint_dir, 'sup-function')
 
                 timeref = time.time()
 
             #early stop if not improves after 10 validations
             if last_improvement >= early_stop_steps:
-                #savemodel()
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
         print 'Test evaluation:'
+        restore_checkpoint(saver, session, checkpoint_dir)
         acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
         print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
 
