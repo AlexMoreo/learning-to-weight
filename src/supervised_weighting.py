@@ -9,6 +9,7 @@ from sklearn.preprocessing import normalize
 import sys
 from sklearn import svm
 
+#TODO: save weights of the best performing configuration, not the last one after early-stop
 #TODO: convolution on the supervised feat-cat statistics
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
@@ -153,7 +154,7 @@ def main(argv=None):
         C=1.0
         lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
 
-        predictions = lin_svc.predict(test_x)
+        predictions = lin_svc.predict(test_x_weighted)
         acc = accuracy_score(test_y, predictions)
         f1 = f1_score(test_y, predictions, average='binary', pos_label=1)
         p = precision_score(test_y, predictions, average='binary', pos_label=1)
