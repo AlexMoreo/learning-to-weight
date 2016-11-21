@@ -17,9 +17,10 @@ from sklearn import svm
 def main(argv=None):
 
     pos_cat_code = 0
+    feat_sel = 5000
 
     categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code)
+    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
     if data.vectorize=='count':
         print('L1-normalize')
         data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)

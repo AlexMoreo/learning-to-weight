@@ -6,9 +6,11 @@ from sklearn.utils import shuffle
 from helpers import *
 import numpy as np
 import time
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import chi2
 
 class Dataset:
-    def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, dense=False, positive_cat=None):
+    def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, dense=False, positive_cat=None, feat_sel=None):
         err_exit(vectorize not in ['hashing', 'tfidf', 'count', 'binary'], err_msg='Param vectorize should be one in "hashing", "tfidf", "count", or "binary"')
         self.vectorize=vectorize
         self.dense=dense
@@ -35,6 +37,7 @@ class Dataset:
             pos_cat_name = self.devel.target_names[self.positive_cat]
             err_exit(pos_cat_name not in self.devel.target_names, 'Error. Positive category not in scope.')
             self.binarize_classes()
+            self.feature_selection(feat_sel)
         self.cat_vec_dic = dict()
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
@@ -47,6 +50,14 @@ class Dataset:
             target[target == -1] = 1
         __binarize_codes(self.devel.target, self.positive_cat)
         __binarize_codes(self.test.target,  self.positive_cat)
+
+    def feature_selection(self, feat_sel):
+        if feat_sel is not None:
+            print('Selecting %d most important features' % feat_sel)
+            fs = SelectKBest(chi2, k=feat_sel)
+            self.devel_vec = fs.fit_transform(self.devel_vec, self.devel.target)
+            self.test_vec = fs.transform(self.test_vec)
+            print('Done')
 
     def class_prevalence(self, cat_label=1):
         return sum(1.0 for x in self.devel.target if x == cat_label) / self.num_tr_documents()
