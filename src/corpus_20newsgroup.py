@@ -31,21 +31,22 @@ class Dataset:
         else:
             #already sparse representation
             self._batch_getter = self._sparse_batch_getter
-        if self.positive_cat:
-            err_exit(self.positive_cat not in self.devel.target_names, 'Error. Positive category not in scope.')
+        if self.positive_cat is not None:
+            pos_cat_name = self.devel.target_names[self.positive_cat]
+            err_exit(pos_cat_name not in self.devel.target_names, 'Error. Positive category not in scope.')
             self.binarize_classes()
         self.cat_vec_dic = dict()
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
-        pos_cat_code = self.devel.target_names.index(self.positive_cat)
+        #pos_cat_code = self.devel.target_names.index(self.positive_cat)
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
         def __binarize_codes(target, pos_code):
             target[target == pos_code] = -1
             target[target != -1] = 0
             target[target == -1] = 1
-        __binarize_codes(self.devel.target, pos_cat_code)
-        __binarize_codes(self.test.target,  pos_cat_code)
+        __binarize_codes(self.devel.target, self.positive_cat)
+        __binarize_codes(self.test.target,  self.positive_cat)
 
     def class_prevalence(self, cat_label=1):
         return sum(1.0 for x in self.devel.target if x == cat_label) / self.num_tr_documents()

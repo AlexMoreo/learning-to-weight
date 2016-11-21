@@ -16,8 +16,10 @@ from sklearn import svm
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
 
-    categories = ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat='talk.religion.misc')
+    pos_cat_code = 0
+
+    categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
+    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code)
     if data.vectorize=='count':
         print('L1-normalize')
         data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
