@@ -159,15 +159,25 @@ def main(argv=None):
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x})
 
-        C=1.0
+        C = 1.0  # SVM regularization parameter
+        svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
+        rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
+        poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
         lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
 
-        predictions = lin_svc.predict(test_x_weighted)
-        acc = accuracy_score(test_y, predictions)
-        f1 = f1_score(test_y, predictions, average='binary', pos_label=1)
-        p = precision_score(test_y, predictions, average='binary', pos_label=1)
-        r = recall_score(test_y, predictions, average='binary', pos_label=1)
-        print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
+        def evaluation(classifier, test, true_labels):
+            print 'Getting predictions'
+            predictions = classifier.predict(test)
+            acc = accuracy_score(true_labels, predictions)
+            f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
+            p = precision_score(true_labels, predictions, average='binary', pos_label=1)
+            r = recall_score(true_labels, predictions, average='binary', pos_label=1)
+            print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
+
+        evaluation(svc, test_x_weighted, test_y)
+        evaluation(rbf_svc, test_x_weighted, test_y)
+        evaluation(poly_svc, test_x_weighted, test_y)
+        evaluation(lin_svc, test_x_weighted, test_y)
 
 
 
