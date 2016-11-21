@@ -98,6 +98,7 @@ class Dataset:
     def _dense_batch_getter(self, batch):
         return batch
 
+
     def train_batch(self, batch_size=64):
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
         batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]

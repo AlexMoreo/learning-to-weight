@@ -105,9 +105,10 @@ def main(argv=None):
         return acc, f1, p, r, improvement
 
 
-    show_step = 100
+    show_step = 10
     valid_step = show_step * 10
     last_improvement = 0
+    early_stop_steps = 10
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
@@ -129,6 +130,7 @@ def main(argv=None):
                 acc, f1, p, r, improves = evaluation(data.val_batch(), best_score=best_val)
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
+                last_improvement = 0 if improves else last_improvement + 1
 
 
                 #test_dict = as_feed_dict(data.test_batch())
@@ -141,10 +143,14 @@ def main(argv=None):
                 timeref = time.time()
 
             #early stop if not improves after 10 validations
-            if last_improvement >= 10:
+            if last_improvement >= early_stop_steps:
                 #savemodel()
-
+                print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
+
+        print 'Test evaluation:'
+        acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
+        print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
 
 
 
