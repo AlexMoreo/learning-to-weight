@@ -74,7 +74,7 @@ def main(argv=None):
           return idf
 
       weighted_layer = tf.mul(tf_like(x), idf_like())
-      normalized = tf.nn.l2_normalize(weighted_layer, dim=1)
+      normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
       logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
 
       loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits,y))
@@ -87,8 +87,10 @@ def main(argv=None):
 
       #op_step = tf.Variable(0, trainable=False)
       #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
-      #optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
-      optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
+      if FLAGS.optimizer == 'sgd':
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+      else:#adam
+            optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
 
       saver = tf.train.Saver(max_to_keep=1)
 
@@ -143,6 +145,8 @@ def main(argv=None):
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
+                acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
+                print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
 
                 timeref = time.time()
 
@@ -151,7 +155,7 @@ def main(argv=None):
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
-        fout_path = 'out-c'+str(pos_cat_code)+'.txt'
+        fout_path = 'out-'+FLAGS.optimizer+'-'+str(FLAGS.lrate)+('-norm' if FLAGS.normalize else '')+'-c'+str(pos_cat_code)+'.txt'
         with open(fout_path, 'w') as fout:
             def tee(outstring, fout):
                 print outstring
@@ -200,6 +204,10 @@ if __name__ == '__main__':
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
     flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)')
+    flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam"] (default sgd)')
+    flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     #flags.DEFINE_string('fout', '', 'Output file')
+
+    err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
 
     tf.app.run()
