@@ -33,7 +33,7 @@ def main(argv=None):
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
     print("Vectorizer=%s" % data.vectorize)
 
-    checkpoint_dir=''
+    checkpoint_dir='.'
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -142,7 +142,7 @@ def main(argv=None):
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savemodel(session, 0, saver, checkpoint_dir, 'model')
+                    savemodel(session, step, saver, checkpoint_dir, 'model')
 
                 timeref = time.time()
 
