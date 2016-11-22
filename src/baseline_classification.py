@@ -26,7 +26,7 @@ def evaluation(classifier, test, true_labels, name=''):
     f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
     p = precision_score(true_labels, predictions, average='binary', pos_label=1)
     r = recall_score(true_labels, predictions, average='binary', pos_label=1)
-    print(name + ' cat %d: acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (pos_cat_code, acc * 100, f1, p, r))
+    print(name + ': acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
 
 if __name__ == '__main__':
 
