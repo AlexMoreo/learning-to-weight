@@ -64,9 +64,10 @@ def main(argv=None):
           feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
           idf_tensor = tf.reshape(feat_info, shape=[1, -1, 1])
           outs = FLAGS.hidden
-          filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
-          #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
-          filter_bias = tf.Variable(tf.zeros(outs))
+          #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
+          filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
+          #filter_bias = tf.Variable(tf.zeros(outs))
+          filter_bias = tf.Variabe(0.1, reshape=[outs])
           conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
           relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
           reshape = tf.reshape(relu, [data.num_features(), outs])
@@ -110,13 +111,14 @@ def main(argv=None):
         f1 = f1_score(eval_dict[y], predictions, average='binary', pos_label=1)
         p = precision_score(eval_dict[y], predictions, average='binary', pos_label=1)
         r = recall_score(eval_dict[y], predictions, average='binary', pos_label=1)
-        improvement = f1 > best_score['f1']
+        improvement = (f1 > best_score['f1'])
+        if not improvement and f1 == 0.0:
+            improvement = (p > best_score['p']) or (r > best_score['r'])
         best_score['acc'] = max(acc, best_score['acc'])
         best_score['f1'] = max(f1, best_score['f1'])
         best_score['p'] = max(p, best_score['p'])
         best_score['r'] = max(r, best_score['r'])
         return acc, f1, p, r, improvement
-
 
     show_step = 100
     valid_step = show_step * 10
@@ -145,7 +147,7 @@ def main(argv=None):
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
-                elif f1 == 0 and last_improvement > 5:
+                elif f1 == 0.0 and last_improvement > 5:
                     print 'Reinitializing model parameters'
                     tf.initialize_all_variables().run()
                     last_improvement = 0
