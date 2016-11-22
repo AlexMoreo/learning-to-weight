@@ -16,8 +16,9 @@ from sklearn import svm
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
 
-    pos_cat_code = 0
-    feat_sel = 5000
+    pos_cat_code = FLAGS.cat
+    feat_sel = FLAGS.fs
+
     categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
     if data.vectorize=='count':
@@ -32,7 +33,7 @@ def main(argv=None):
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
     print("Vectorizer=%s" % data.vectorize)
 
-    checkpoint_dir='.'
+    checkpoint_dir=''
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -41,7 +42,7 @@ def main(argv=None):
     info_by_feat = len(feat_corr_info) / data.num_features()
 
     x_size = data.num_features()
-    batch_size = 32
+    batch_size = FLAGS.batchsize
 
     graph = tf.Graph()
     with graph.as_default():
@@ -62,7 +63,7 @@ def main(argv=None):
           #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
           feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
           idf_tensor = tf.reshape(feat_info, shape=[1, -1, 1])
-          outs = 100
+          outs = FLAGS.hidden
           #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs]))
           filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
           filter_bias = tf.Variable(tf.zeros(outs))
@@ -87,7 +88,7 @@ def main(argv=None):
       #op_step = tf.Variable(0, trainable=False)
       #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
       #optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
-      optimizer = tf.train.AdamOptimizer(learning_rate=.05).minimize(loss) # 0.005
+      optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
 
       saver = tf.train.Saver(max_to_keep=1)
 
@@ -107,7 +108,7 @@ def main(argv=None):
         f1 = f1_score(eval_dict[y], predictions, average='binary', pos_label=1)
         p = precision_score(eval_dict[y], predictions, average='binary', pos_label=1)
         r = recall_score(eval_dict[y], predictions, average='binary', pos_label=1)
-        improvement = (acc > best_score['acc']) or (f1 > best_score['f1']) or (p > best_score['p']) or (r > best_score['r'])
+        improvement = f1 > best_score['f1']
         best_score['acc'] = max(acc, best_score['acc'])
         best_score['f1'] = max(f1, best_score['f1'])
         best_score['p'] = max(p, best_score['p'])
@@ -141,7 +142,7 @@ def main(argv=None):
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savemodel(session, step, saver, checkpoint_dir, 'sup-function')
+                    savemodel(session, 0, saver, checkpoint_dir, 'model')
 
                 timeref = time.time()
 
@@ -150,43 +151,55 @@ def main(argv=None):
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
-        print 'Test evaluation:'
-        restore_checkpoint(saver, session, checkpoint_dir)
-        acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
-        print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
+        fout_path = 'out-c'+str(pos_cat_code)+'.txt'
+        with open(fout_path, 'w') as fout:
+            def tee(outstring, fout):
+                print outstring
+                fout.write(outstring+'\n')
 
-        print 'Weighting documents'
-        devel_x, devel_y = data.get_devel_set()
-        devel_x_weighted = normalized.eval(feed_dict={x:devel_x})
-        test_x, test_y   = data.test_batch()
-        test_x_weighted  = normalized.eval(feed_dict={x:test_x})
+            print 'Test evaluation:'
+            restore_checkpoint(saver, session, checkpoint_dir)
+            acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
+            tee('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r), fout)
 
-        C = 1.0  # SVM regularization parameter
-        #svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
-        #rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
-        #poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
-        lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
+            print 'Weighting documents'
+            devel_x, devel_y = data.get_devel_set()
+            devel_x_weighted = normalized.eval(feed_dict={x:devel_x})
+            test_x, test_y   = data.test_batch()
+            test_x_weighted  = normalized.eval(feed_dict={x:test_x})
 
-        def evaluation(classifier, test, true_labels):
+            C = 1.0  # SVM regularization parameter
+            #svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
+            #rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
+            #poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
+            lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
+
             print 'Getting predictions'
-            predictions = classifier.predict(test)
-            acc = accuracy_score(true_labels, predictions)
-            f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
-            p = precision_score(true_labels, predictions, average='binary', pos_label=1)
-            r = recall_score(true_labels, predictions, average='binary', pos_label=1)
-            print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
+            def evaluation(classifier, test, true_labels):
+                predictions = classifier.predict(test)
+                acc = accuracy_score(true_labels, predictions)
+                f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
+                p = precision_score(true_labels, predictions, average='binary', pos_label=1)
+                r = recall_score(true_labels, predictions, average='binary', pos_label=1)
+                return acc, f1, p, r
 
-        #evaluation(svc, test_x_weighted, test_y)
-        #evaluation(rbf_svc, test_x_weighted, test_y)
-        #evaluation(poly_svc, test_x_weighted, test_y)
-        evaluation(lin_svc, test_x_weighted, test_y)
-
-#baseline Test acc=95.820%, f1=0.394, p=0.513, r=0.319
+            #evaluation(svc, test_x_weighted, test_y)
+            #evaluation(rbf_svc, test_x_weighted, test_y)
+            #evaluation(poly_svc, test_x_weighted, test_y)
+            acc, f1, p, r = evaluation(lin_svc, test_x_weighted, test_y)
+            tee('LinearSVM acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r), fout)
 
 
 #-------------------------------------
 if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
+
+    flags.DEFINE_integer('fs', None, 'Indicates the number of features to be selected (default None --all).')
+    flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
+    flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
+    flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
+    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)')
+    #flags.DEFINE_string('fout', '', 'Output file')
 
     tf.app.run()
