@@ -15,7 +15,7 @@ def train_classifiers(trX, trY, teX, teY):
     #print 'Training Gaussian SVM'
     #rbf_svc = svm.SVC(kernel='rbf', C=C).fit(X, Y)
     evaluation(svm.LinearSVC(C=C).fit(trX, trY), teX, teY, 'Lin-SVM')
-    evaluation(svm.SVC(kernel='poly', C=C).fit(trX, trY), teX, teY, 'Poly-SVM')
+    #evaluation(svm.SVC(kernel='poly', C=C).fit(trX, trY), teX, teY, 'Poly-SVM')
     evaluation(KNeighborsClassifier(n_jobs=-1).fit(trX, trY), teX, teY, 'k-NN')
     evaluation(DecisionTreeClassifier().fit(trX, trY), teX, teY, 'Decision Tree')
     evaluation(MultinomialNB().fit(trX, trY), teX, teY, 'MultiNB')
