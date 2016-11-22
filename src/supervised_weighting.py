@@ -18,7 +18,6 @@ def main(argv=None):
 
     pos_cat_code = 0
     feat_sel = 5000
-
     categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
     if data.vectorize=='count':
@@ -88,7 +87,7 @@ def main(argv=None):
       #op_step = tf.Variable(0, trainable=False)
       #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
       #optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
-      optimizer = tf.train.AdamOptimizer(learning_rate=.005).minimize(loss) # 0.001
+      optimizer = tf.train.AdamOptimizer(learning_rate=.05).minimize(loss) # 0.005
 
       saver = tf.train.Saver(max_to_keep=1)
 
@@ -163,9 +162,9 @@ def main(argv=None):
         test_x_weighted  = normalized.eval(feed_dict={x:test_x})
 
         C = 1.0  # SVM regularization parameter
-        svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
-        rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
-        poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
+        #svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
+        #rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
+        #poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
         lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
 
         def evaluation(classifier, test, true_labels):
@@ -177,11 +176,12 @@ def main(argv=None):
             r = recall_score(true_labels, predictions, average='binary', pos_label=1)
             print('Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r))
 
-        evaluation(svc, test_x_weighted, test_y)
-        evaluation(rbf_svc, test_x_weighted, test_y)
-        evaluation(poly_svc, test_x_weighted, test_y)
+        #evaluation(svc, test_x_weighted, test_y)
+        #evaluation(rbf_svc, test_x_weighted, test_y)
+        #evaluation(poly_svc, test_x_weighted, test_y)
         evaluation(lin_svc, test_x_weighted, test_y)
 
+#baseline Test acc=95.820%, f1=0.394, p=0.513, r=0.319
 
 
 #-------------------------------------
