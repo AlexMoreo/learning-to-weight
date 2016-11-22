@@ -132,7 +132,7 @@ def main(argv=None):
         tf.initialize_all_variables().run()
         l_ave=0.0
         timeref = time.time()
-        for step in range(1,1000000):
+        for step in range(1,100000):
             _,l = session.run([optimizer, loss], feed_dict=as_feed_dict(data.train_batch(batch_size)))
             l_ave += l
 
