@@ -38,6 +38,7 @@ if __name__ == '__main__':
         trX, trY = data.get_devel_set()
         teX, teY = data.test_batch()
 
+        print('Cat %d:' % pos_cat_code)
         train_classifiers(trX, trY, teX, teY)
 
 
