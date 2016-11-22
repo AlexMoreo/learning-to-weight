@@ -9,6 +9,7 @@ from sklearn.preprocessing import normalize
 import sys
 from sklearn import svm
 from sklearn.naive_bayes import MultinomialNB
+from baseline_classification import train_classifiers
 
 #TODO: save weights only if f1 improves
 #TODO: save weights of the best performing configuration, not the last one after early-stop
@@ -180,27 +181,7 @@ def main(argv=None):
             test_x, test_y   = data.test_batch()
             test_x_weighted  = normalized.eval(feed_dict={x:test_x})
 
-            C = 1.0  # SVM regularization parameter
-            #svc = svm.SVC(kernel='linear', C=C).fit(devel_x_weighted, devel_y)
-            #rbf_svc = svm.SVC(kernel='rbf', gamma=0.7, C=C).fit(devel_x_weighted, devel_y)
-            #poly_svc = svm.SVC(kernel='poly', degree=3, C=C).fit(devel_x_weighted, devel_y)
-            lin_svc = svm.LinearSVC(C=C).fit(devel_x_weighted, devel_y)
-
-            print 'Getting predictions'
-            def evaluation(classifier, test, true_labels):
-                predictions = classifier.predict(test)
-                acc = accuracy_score(true_labels, predictions)
-                f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
-                p = precision_score(true_labels, predictions, average='binary', pos_label=1)
-                r = recall_score(true_labels, predictions, average='binary', pos_label=1)
-                return acc, f1, p, r
-
-            #evaluation(svc, test_x_weighted, test_y)
-            #evaluation(rbf_svc, test_x_weighted, test_y)
-            #evaluation(poly_svc, test_x_weighted, test_y)
-            acc, f1, p, r = evaluation(lin_svc, test_x_weighted, test_y)
-            tee('LinearSVM acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r), fout)
-
+            train_classifiers(devel_x_weighted, devel_y, test_x_weighted, test_y)
 
 #-------------------------------------
 if __name__ == '__main__':
