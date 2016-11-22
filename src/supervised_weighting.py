@@ -64,8 +64,8 @@ def main(argv=None):
           feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
           idf_tensor = tf.reshape(feat_info, shape=[1, -1, 1])
           outs = FLAGS.hidden
-          #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs]))
-          filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
+          filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
+          #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
           filter_bias = tf.Variable(tf.zeros(outs))
           conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
           relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
@@ -148,6 +148,8 @@ def main(argv=None):
                 elif f1 == 0:
                     print 'Reinitializing model parameters'
                     tf.initialize_all_variables().run()
+                    last_improvement = 0
+
                 acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
 
