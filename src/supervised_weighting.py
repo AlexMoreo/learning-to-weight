@@ -145,7 +145,7 @@ def main(argv=None):
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
-                elif f1 == 0:
+                elif f1 == 0 and last_improvement > 5:
                     print 'Reinitializing model parameters'
                     tf.initialize_all_variables().run()
                     last_improvement = 0
