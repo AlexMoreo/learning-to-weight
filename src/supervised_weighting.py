@@ -67,7 +67,7 @@ def main(argv=None):
           #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
           filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
           #filter_bias = tf.Variable(tf.zeros(outs))
-          filter_bias = tf.Variabe(0.1, reshape=[outs])
+          filter_bias = tf.Variable(0.1, reshape=[outs])
           conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
           relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
           reshape = tf.reshape(relu, [data.num_features(), outs])
@@ -86,12 +86,12 @@ def main(argv=None):
       correct_prediction = tf.equal(y, prediction)
       accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
 
-      #op_step = tf.Variable(0, trainable=False)
-      #rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999)
       if FLAGS.optimizer == 'sgd':
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+          op_step = tf.Variable(0, trainable=False)
+          decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
+          optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
       else:#adam
-            optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
+          optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
 
       saver = tf.train.Saver(max_to_keep=1)
 
