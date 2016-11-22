@@ -145,6 +145,9 @@ def main(argv=None):
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
+                elif f1 == 0:
+                    print 'Reinitializing model parameters'
+                    tf.initialize_all_variables().run()
                 acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
 
