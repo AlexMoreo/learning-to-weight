@@ -67,7 +67,7 @@ def main(argv=None):
           #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
           filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=1.0 / math.sqrt(outs)))
           #filter_bias = tf.Variable(tf.zeros(outs))
-          filter_bias = tf.Variable(0.1, shape=[outs])
+          filter_bias = tf.Variable(tf.constant(0.1, shape=[outs]))
           conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
           relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
           reshape = tf.reshape(relu, [data.num_features(), outs])
