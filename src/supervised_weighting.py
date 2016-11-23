@@ -166,9 +166,6 @@ def main(argv=None):
 
         fout_path = 'out-'+FLAGS.optimizer+'-'+str(FLAGS.lrate)+('-norm' if FLAGS.normalize else '')+'-c'+str(pos_cat_code)+'.txt'
         with open(fout_path, 'w') as fout:
-            def tee(outstring, fout):
-                print outstring
-                fout.write(outstring+'\n')
 
             print 'Test evaluation:'
             restore_checkpoint(saver, session, checkpoint_dir)
@@ -181,7 +178,7 @@ def main(argv=None):
             test_x, test_y   = data.test_batch()
             test_x_weighted  = normalized.eval(feed_dict={x:test_x})
 
-            train_classifiers(devel_x_weighted, devel_y, test_x_weighted, test_y)
+            train_classifiers(devel_x_weighted, devel_y, test_x_weighted, test_y, fout)
 
 #-------------------------------------
 if __name__ == '__main__':

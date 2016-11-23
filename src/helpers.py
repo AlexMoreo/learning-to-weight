@@ -123,6 +123,10 @@ def count_trainable_parameters():
     return total_parameters
 
 
+def tee(outstring, fout):
+    print outstring
+    fout.write(outstring + '\n')
+
 
 
 
