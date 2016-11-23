@@ -29,6 +29,7 @@ def evaluation(classifier, test, true_labels, name, fout):
     tee(name + ': acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc * 100, f1, p, r), fout)
 
 if __name__ == '__main__':
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     #TODO parse params (num categories, feat sel, vectorizer, methods)
     for pos_cat_code in range(20):

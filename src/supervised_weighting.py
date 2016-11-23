@@ -21,6 +21,7 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
 
+
     categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
     if data.vectorize=='count':
@@ -195,5 +196,7 @@ if __name__ == '__main__':
     #flags.DEFINE_string('fout', '', 'Output file')
 
     err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
+
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     tf.app.run()
