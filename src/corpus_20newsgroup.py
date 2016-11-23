@@ -110,6 +110,11 @@ class Dataset:
     def _dense_batch_getter(self, batch):
         return batch
 
+    def _null_batch_getter(self, batch):
+        indices, values = self.get_index_values(batch)
+        weights = self.weight_getter(batch)
+        return indices, values, weights
+
     def get_devel_set(self):
         devel_rep = self._batch_getter(self.devel_vec)
         labels = self.devel.target

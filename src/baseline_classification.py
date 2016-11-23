@@ -36,8 +36,12 @@ if __name__ == '__main__':
         feat_sel = 10000
         categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
         data = Dataset(categories=categories, vectorize='tfidf', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
-        trX, trY = data.get_devel_set()
-        teX, teY = data.test_batch()
+        #trX, trY = data.get_devel_set()
+        trX = data.devel_vec[data.devel_indexes]
+        trY = data.devel.target[data.devel_indexes]
+        #teX, teY = data.test_batch()
+        teX = data.test_vec[data.test_indexes]
+        teY = data.test.target[data.test_indexes]
 
         with open('tfidf_baselines_results.txt', 'w') as fout:
 
