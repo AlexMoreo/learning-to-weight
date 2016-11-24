@@ -8,6 +8,10 @@ from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
 from baseline_classification import train_classifiers
+import itertools
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
 
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
@@ -15,7 +19,7 @@ def main(argv=None):
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
+    categories = None if not FLAGS.debug else ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
 
     if data.vectorize=='count':
@@ -41,54 +45,65 @@ def main(argv=None):
 
     graph = tf.Graph()
     with graph.as_default():
-      # Placeholders
-      x = tf.placeholder(tf.float32, shape=[None, x_size])
-      y = tf.placeholder(tf.float32, shape=[None])
+        # Placeholders
+        x = tf.placeholder(tf.float32, shape=[None, x_size])
+        y = tf.placeholder(tf.float32, shape=[None])
 
+        feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
 
-      def tf_like(x_raw):
-          tf_param = tf.Variable(tf.ones([1]), tf.float32)
-          return tf.mul(tf.log(x_raw + tf.ones_like(x_raw)), tf_param)
-          #return tf.log(x_raw + tf.ones_like(x_raw))
-          #x_stack = tf.reshape(x_raw, shape=[-1,1])
-          #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
-          #return tf.reshape(tfx_stack, shape=[-1, x_size])
+        def tf_like(x_raw):
+            tf_param = tf.Variable(tf.ones([1]), tf.float32)
+            return tf.mul(tf.log(x_raw + tf.ones_like(x_raw)), tf_param)
+            #return tf.log(x_raw + tf.ones_like(x_raw))
+            #x_stack = tf.reshape(x_raw, shape=[-1,1])
+            #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
+            #return tf.reshape(tfx_stack, shape=[-1, x_size])
 
-      def idf_like():
-          #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
-          feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
-          idf_tensor = tf.reshape(feat_info, shape=[1, -1, 1])
-          outs = FLAGS.hidden
-          #filter = tf.Variable(tf.random_normal([info_by_feat, 1, outs], stddev=.1))
-          filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, outs], stddev=.1 / math.sqrt(outs)))
-          filter_bias = tf.Variable(tf.zeros(outs))
-          #filter_bias = tf.Variable(tf.constant(0.1, shape=[outs]))
-          conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
-          relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
-          reshape = tf.reshape(relu, [data.num_features(), outs])
-          idf = tf.reshape(add_layer(reshape,1), [data.num_features()])
-          return idf
+        def idf_like(info_arr):
+            #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
+            filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
+            #filter_bias = tf.Variable(tf.zeros(FLAGS.hidden))
+            filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
 
-      weighted_layer = tf.mul(tf_like(x), idf_like())
-      normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
-      logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
+            print info_arr.get_shape()
+            n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
+            print n_results
+            idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
+            conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
+            relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
+            reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
+            idf = tf.reshape(add_layer(reshape,1), [n_results])
+            print idf.get_shape()
+            return idf
 
-      loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits,y))
+        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
+        normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
+        logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
 
-      y_ = tf.nn.sigmoid(logits)
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits,y))
 
-      prediction = tf.round(y_) # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
-      correct_prediction = tf.equal(y, prediction)
-      accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
+        y_ = tf.nn.sigmoid(logits)
 
-      if FLAGS.optimizer == 'sgd':
+        prediction = tf.round(y_) # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
+        correct_prediction = tf.equal(y, prediction)
+        accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
+
+        if FLAGS.optimizer == 'sgd':
           op_step = tf.Variable(0, trainable=False)
           decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
           optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
-      else:#adam
-          optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss) # .005
+        else:#adam
+          optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
 
-      saver = tf.train.Saver(max_to_keep=1)
+        #pre-learn the idf-like function as any feature selection function
+
+        x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
+        y_func = tf.placeholder(tf.float32, shape=[None])
+        idf_prediction = idf_like(x_func)
+        idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
+        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.00001).minimize(idf_loss)
+
+        saver = tf.train.Saver(max_to_keep=1)
 
     # ---------------------------------------------------------------------
     # Graph run
@@ -118,14 +133,81 @@ def main(argv=None):
     checkpoint_dir = FLAGS.checkpointdir
     create_if_not_exists(checkpoint_dir)
 
-    show_step = 100
-    valid_step = show_step * 10
-    last_improvement = 0
-    early_stop_steps = 10
+    pc = data.class_prevalence()
+    def idflike_initfunction(x):
+        tpr=x[0] # p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
+        fpr=x[1] # p(t|_c) = p(fp)/p(_c) = p(fp)/(p(fp)+p(tn))
+        pnc = 1.0 - pc
+        tp = tpr*pc
+        fn = pc-tp
+        fp = fpr*pnc
+        tn = pnc-fp
+        pt = tp+fp
+        pnt = fn+tn
+        def ig_factor(ptc, pt, pc):
+            den = pt*pc
+            if den != 0.0 and ptc != 0: return ptc * math.log(ptc/den,2)
+            else: return 0.0
+        ig = ig_factor(tp,pt,pc) + ig_factor(fp,pt,pnc) + ig_factor(fn,pnt,pc) + ig_factor(tn,pnt,pnc)
+        return ig
+
+    def sample():
+        x = [random.random() for _ in range(info_by_feat)]
+        y = idflike_initfunction(x)
+        return (x, y)
+
+    def pretrain_batch(batch_size=1):
+        next = [sample() for _ in range(batch_size)]
+        return zip(*next)
+
+    def plot_coordinates(div=50):
+        x1_div = np.linspace(0.0, 1.0, div)
+        x2_div = np.linspace(0.0, 1.0, div)
+        points = itertools.product(x1_div, x2_div)
+        return zip(*[p for p in points])
+
+    def comp_plot(x1, x2, y_):
+        y = [idflike_initfunction([x1[i], x2[i]]) for i in range(len(x1))]
+        fig = plt.figure(figsize=plt.figaspect(0.4))
+        ax = fig.add_subplot(1, 2, 1, projection='3d')
+        ax.set_title('Target function')
+        ax.plot_trisurf(x1, x2, y, linewidth=0.2, cmap=cm.jet)
+        ax = fig.add_subplot(1, 2, 2, projection='3d')
+        ax.set_title('Learnt function')
+        ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet)
+        plt.show()
+
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
+
+        #pre-train the idf-like parameters
+        if FLAGS.pretrain:
+            l_ave = 0.0
+            show_step = 1000
+            for step in range(1, 40001):
+                x_, y_ = pretrain_batch()
+                _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_})
+                l_ave += l
+
+                if step % show_step == 0:
+                    print('[step=%d] idf-loss=%.7f' % (step, l_ave / show_step))
+                    l_ave = 0.0
+
+                if step % (show_step*10) == 0:
+                    x1_, x2_ = plot_coordinates(div=40)
+                    y_ = []
+                    x_ = zip(x1_, x2_)
+                    for xi_ in x_:
+                        y_.append(idf_prediction.eval(feed_dict={x_func: [xi_]}))
+                    y_ = np.reshape(y_, len(x1_))
+                    #comp_plot(x1_, x2_, y_)
+
+        show_step = 100
+        valid_step = show_step * 10
+        last_improvement = 0
+        early_stop_steps = 10
         l_ave=0.0
         timeref = time.time()
         for step in range(1,50000):
@@ -185,14 +267,15 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
     flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
-    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)')
+    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam"] (default sgd)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', './model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
+    flags.DEFINE_boolean('pretrain', False, 'Pretrains the model parameters to mimic a given FS function (default False)')
+    flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     #flags.DEFINE_string('fout', '', 'Output file')
 
     err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
-
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     tf.app.run()

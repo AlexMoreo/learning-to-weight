@@ -31,7 +31,7 @@ def evaluation(classifier, test, true_labels, name, fout):
 if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
-    #TODO parse params (num categories, feat sel, vectorizer, methods)
+    #TODO parse params (num categories, feat sel, vectorizer, methods, read-from-model)
     with open('tfidf_baselines_results.txt', 'w') as fout:
         for pos_cat_code in range(20):
             feat_sel = 10000
