@@ -32,18 +32,17 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     #TODO parse params (num categories, feat sel, vectorizer, methods)
-    for pos_cat_code in range(20):
-        feat_sel = 10000
-        categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-        data = Dataset(categories=categories, vectorize='tfidf', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
-        #trX, trY = data.get_devel_set()
-        trX = data.devel_vec[data.devel_indexes]
-        trY = data.devel.target[data.devel_indexes]
-        #teX, teY = data.test_batch()
-        teX = data.test_vec[data.test_indexes]
-        teY = data.test.target[data.test_indexes]
-
-        with open('tfidf_baselines_results.txt', 'w') as fout:
+    with open('tfidf_baselines_results.txt', 'w') as fout:
+        for pos_cat_code in range(20):
+            feat_sel = 10000
+            categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
+            data = Dataset(categories=categories, vectorize='tfidf', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
+            #trX, trY = data.get_devel_set()
+            trX = data.devel_vec[data.devel_indexes]
+            trY = data.devel.target[data.devel_indexes]
+            #teX, teY = data.test_batch()
+            teX = data.test_vec[data.test_indexes]
+            teY = data.test.target[data.test_indexes]
 
             tee('Cat %d:' % pos_cat_code, fout)
             train_classifiers(trX, trY, teX, teY, fout)

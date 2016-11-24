@@ -7,23 +7,17 @@ from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
-from sklearn import svm
-from sklearn.naive_bayes import MultinomialNB
 from baseline_classification import train_classifiers
 
-#TODO: save weights only if f1 improves
-#TODO: save weights of the best performing configuration, not the last one after early-stop
-#TODO: convolution on the supervised feat-cat statistics
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-
-
     categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
     data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
+
     if data.vectorize=='count':
         print('L1-normalize')
         data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
@@ -35,8 +29,6 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_ategories())))
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
     print("Vectorizer=%s" % data.vectorize)
-
-    checkpoint_dir='.'
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -123,6 +115,9 @@ def main(argv=None):
         best_score['r'] = max(r, best_score['r'])
         return acc, f1, p, r, improvement
 
+    checkpoint_dir = FLAGS.checkpointdir
+    create_if_not_exists(checkpoint_dir)
+
     show_step = 100
     valid_step = show_step * 10
     last_improvement = 0
@@ -193,6 +188,7 @@ if __name__ == '__main__':
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)')
     flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam"] (default sgd)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
+    flags.DEFINE_string('checkpointdir', './model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
     #flags.DEFINE_string('fout', '', 'Output file')
 
     err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
