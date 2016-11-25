@@ -42,12 +42,14 @@ def main(argv=None):
 
     x_size = data.num_features()
     batch_size = FLAGS.batchsize
+    drop_keep_p = 0.8
 
     graph = tf.Graph()
     with graph.as_default():
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
+        keep_p = tf.placeholder(tf.float32)
 
         feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
 
@@ -61,9 +63,11 @@ def main(argv=None):
 
         def idf_like(info_arr):
             #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
-            filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
-            #filter_bias = tf.Variable(tf.zeros(FLAGS.hidden))
-            filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
+            #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
+            filter = tf.Variable(
+                tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.10 / math.sqrt(FLAGS.hidden)))
+            filter_bias = tf.Variable(tf.zeros(FLAGS.hidden))
+            #filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
 
             print info_arr.get_shape()
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
@@ -71,6 +75,7 @@ def main(argv=None):
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
             relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
+            relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             idf = tf.reshape(add_layer(reshape,1), [n_results])
             print idf.get_shape()
@@ -108,15 +113,15 @@ def main(argv=None):
     # ---------------------------------------------------------------------
     # Graph run
     # ---------------------------------------------------------------------
-    def as_feed_dict(batch_parts):
+    def as_feed_dict(batch_parts, dropout=False):
         x_, y_ = batch_parts
-        return {x: x_, y: y_}
+        return {x: x_, y: y_, keep_p: drop_keep_p if dropout else 1.0}
 
     best_val = dict({'acc':0.0, 'f1':0.0, 'p':0.0, 'r':0.0})
     best_test = dict({'acc': 0.0, 'f1': 0.0, 'p': 0.0, 'r': 0.0})
 
     def evaluation(batch, best_score):
-        eval_dict = as_feed_dict(batch)
+        eval_dict = as_feed_dict(batch, dropout=False)
         acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
         f1 = f1_score(eval_dict[y], predictions, average='binary', pos_label=1)
         p = precision_score(eval_dict[y], predictions, average='binary', pos_label=1)
@@ -188,21 +193,24 @@ def main(argv=None):
             show_step = 1000
             for step in range(1, 40001):
                 x_, y_ = pretrain_batch()
-                _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_})
+                _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_, keep_p:drop_keep_p})
                 l_ave += l
 
                 if step % show_step == 0:
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave / show_step))
+                    if l_ave < 0.0005:
+                        print 'Error < 0.0005, proceed'
+                        break
                     l_ave = 0.0
 
-                if step % (show_step*10) == 0:
+                if FLAGS.plot and step % (show_step*10) == 0:
                     x1_, x2_ = plot_coordinates(div=40)
                     y_ = []
                     x_ = zip(x1_, x2_)
                     for xi_ in x_:
-                        y_.append(idf_prediction.eval(feed_dict={x_func: [xi_]}))
+                        y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p:1.0}))
                     y_ = np.reshape(y_, len(x1_))
-                    #comp_plot(x1_, x2_, y_)
+                    comp_plot(x1_, x2_, y_)
 
         show_step = 100
         valid_step = show_step * 10
@@ -211,7 +219,7 @@ def main(argv=None):
         l_ave=0.0
         timeref = time.time()
         for step in range(1,50000):
-            _,l = session.run([optimizer, loss], feed_dict=as_feed_dict(data.train_batch(batch_size)))
+            _,l = session.run([optimizer, loss], feed_dict=as_feed_dict(data.train_batch(batch_size), dropout=True))
             l_ave += l
 
             if step % show_step == 0:
@@ -273,6 +281,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('checkpointdir', './model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
     flags.DEFINE_boolean('pretrain', False, 'Pretrains the model parameters to mimic a given FS function (default False)')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
+    flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
     #flags.DEFINE_string('fout', '', 'Output file')
 
     err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")

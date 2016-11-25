@@ -74,17 +74,18 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
-        # keep_p = tf.placeholder(tf.float32, name='dropoupt_keep_p')
+        keep_p = tf.placeholder(tf.float32, name='dropoupt_keep_p')
 
-        ff_out = ff_multilayer(x, hidden_sizes=[100, 50]*3, non_linear_function=tf.nn.relu)
+        ff_out = ff_multilayer(x, hidden_sizes=[100, 50]*3, non_linear_function=tf.nn.relu, keep_prob=keep_p)
         _y = add_linear_layer(ff_out, 1, name='output_layer')
 
         loss = tf.reduce_mean(tf.square(tf.sub(y, _y)))
         # loss = tf.nn.l2_loss(y - _y)
 
         op_step = tf.Variable(0, trainable=False)
-        rate = tf.train.exponential_decay(.01, op_step, 1, 0.99999, staircase=True)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
+        rate = tf.train.exponential_decay(.1, op_step, 1, 0.99999, staircase=True)
+        #optimizer = tf.train.GradientDescentOptimizer(learning_rate=rate).minimize(loss, global_step=op_step)
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(loss, global_step=op_step)
 
     # ---------------------------------------------------------------------
     # Graph run
@@ -96,17 +97,17 @@ def main(argv=None):
         tf.initialize_all_variables().run()
         l_ave = 0.0
         for step in range(1, 1000000):
-            x_, y_ = batch()
-            _, l, lr = session.run([optimizer, loss, rate], feed_dict={x: x_, y: y_})
+            x_, y_ = batch(1)
+            _, l, lr = session.run([optimizer, loss, rate], feed_dict={x: x_, y: y_, keep_p:1.0})
             l_ave += l
 
             if step % show_step == 0:
-                print('[step=%d][lr=%.10f] loss=%.7f' % (step, lr, l_ave / show_step))
+                print('[step=%d][lr=%.10f] loss=%.7f' % (step, -1, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0 and FLAGS.plot:
                 x1_, x2_ = plot_coordinates(div=40)
-                y_ = _y.eval(feed_dict={x: zip(x1_, x2_)})
+                y_ = _y.eval(feed_dict={x: zip(x1_, x2_), keep_p:1.0})
                 y_ = np.reshape(y_, len(x1_))
                 comp_plot(x1_, x2_, y_)
 
