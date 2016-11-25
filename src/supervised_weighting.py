@@ -197,7 +197,8 @@ def main(argv=None):
                 l_ave += l
 
                 if step % show_step == 0:
-                    print('[step=%d] idf-loss=%.7f' % (step, l_ave / show_step))
+                    l_ave /= show_step
+                    print('[step=%d] idf-loss=%.7f' % (step, l_ave))
                     if l_ave < 0.0005:
                         print 'Error < 0.0005, proceed'
                         break
