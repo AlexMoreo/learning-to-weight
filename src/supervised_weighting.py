@@ -3,6 +3,7 @@ import tensorflow as tf
 from helpers import *
 from pprint import pprint
 import time
+from feature_selection_function import *
 from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
@@ -13,9 +14,14 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
+#TODO: balanced batchs
+#TODO: tensorboard
+#TODO: improve result out
+#TODO: select FS function, and plot to file
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
+    err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
@@ -32,7 +38,6 @@ def main(argv=None):
     print("|V|=%d" % data.num_features())
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_ategories())))
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
-    print("Vectorizer=%s" % data.vectorize)
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -64,8 +69,8 @@ def main(argv=None):
         def idf_like(info_arr):
             #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
             #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
-            filter = tf.Variable(
-                tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.10 / math.sqrt(FLAGS.hidden)))
+            filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.01 / math.sqrt(FLAGS.hidden)))
+            #filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.00001))
             filter_bias = tf.Variable(tf.zeros(FLAGS.hidden))
             #filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
 
@@ -94,19 +99,20 @@ def main(argv=None):
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
 
         if FLAGS.optimizer == 'sgd':
-          op_step = tf.Variable(0, trainable=False)
-          decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
-          optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
-        else:#adam
-          optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+            op_step = tf.Variable(0, trainable=False)
+            decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
+        elif FLAGS.optimizer == 'adam':
+            optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+        else:
+            optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
 
         #pre-learn the idf-like function as any feature selection function
-
         x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
         y_func = tf.placeholder(tf.float32, shape=[None])
         idf_prediction = idf_like(x_func)
         idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.00001).minimize(idf_loss)
+        idf_optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(idf_loss) #0.0001
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -137,28 +143,16 @@ def main(argv=None):
 
     checkpoint_dir = FLAGS.checkpointdir
     create_if_not_exists(checkpoint_dir)
-
     pc = data.class_prevalence()
-    def idflike_initfunction(x):
-        tpr=x[0] # p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
-        fpr=x[1] # p(t|_c) = p(fp)/p(_c) = p(fp)/(p(fp)+p(tn))
-        pnc = 1.0 - pc
-        tp = tpr*pc
-        fn = pc-tp
-        fp = fpr*pnc
-        tn = pnc-fp
-        pt = tp+fp
-        pnt = fn+tn
-        def ig_factor(ptc, pt, pc):
-            den = pt*pc
-            if den != 0.0 and ptc != 0: return ptc * math.log(ptc/den,2)
-            else: return 0.0
-        ig = ig_factor(tp,pt,pc) + ig_factor(fp,pt,pnc) + ig_factor(fn,pnt,pc) + ig_factor(tn,pnt,pnc)
-        return ig
+
+    def supervised_idf(tpr, fpr):
+        return information_gain(tpr, fpr, pc)
+        #return chi_square(tpr, fpr, pc)
+        #return gss(tpr, fpr, pc)
 
     def sample():
         x = [random.random() for _ in range(info_by_feat)]
-        y = idflike_initfunction(x)
+        y = supervised_idf(tpr=x[0], fpr=x[1])
         return (x, y)
 
     def pretrain_batch(batch_size=1):
@@ -172,7 +166,7 @@ def main(argv=None):
         return zip(*[p for p in points])
 
     def comp_plot(x1, x2, y_):
-        y = [idflike_initfunction([x1[i], x2[i]]) for i in range(len(x1))]
+        y = [supervised_idf(x1[i], x2[i]) for i in range(len(x1))]
         fig = plt.figure(figsize=plt.figaspect(0.4))
         ax = fig.add_subplot(1, 2, 1, projection='3d')
         ax.set_title('Target function')
@@ -199,8 +193,8 @@ def main(argv=None):
                 if step % show_step == 0:
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
-                    if l_ave < 0.0005:
-                        print 'Error < 0.0005, proceed'
+                    if l_ave < 0.0003:
+                        print 'Error < 0.0003, proceed'
                         break
                     l_ave = 0.0
 

@@ -97,7 +97,7 @@ def main(argv=None):
         tf.initialize_all_variables().run()
         l_ave = 0.0
         for step in range(1, 1000000):
-            x_, y_ = batch(1)
+            x_, y_ = batch()
             _, l, lr = session.run([optimizer, loss, rate], feed_dict={x: x_, y: y_, keep_p:1.0})
             l_ave += l
 
