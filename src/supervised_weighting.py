@@ -104,7 +104,7 @@ def main(argv=None):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
         elif FLAGS.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
-        else:
+        else: #rmsprop
             optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
 
         #pre-learn the idf-like function as any feature selection function
@@ -279,7 +279,7 @@ if __name__ == '__main__':
     flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
     #flags.DEFINE_string('fout', '', 'Output file')
 
-    err_exit(FLAGS.optimizer not in ['sgd','adam'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
+    err_exit(FLAGS.optimizer not in ['sgd','adam', 'rmsprop'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     tf.app.run()
