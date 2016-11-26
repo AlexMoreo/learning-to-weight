@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
+#TODO: train the logistic part first, with tf-ig fixed weights
+#TODO: parallelize supervised info vector
 #TODO: balanced batchs
 #TODO: tensorboard
 #TODO: improve result out
@@ -80,7 +82,7 @@ def main(argv=None):
             relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
             relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
-            idf = tf.reshape(add_layer(reshape,1), [n_results])
+            idf = tf.reshape(add_layer(reshape,1), [n_results], name='idf-proj')
             return idf
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
@@ -95,14 +97,18 @@ def main(argv=None):
         correct_prediction = tf.equal(y, prediction)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
 
+        logistic_params = ['out_logistic_functionweight', 'out_logistic_functionbias']
         if FLAGS.optimizer == 'sgd':
             op_step = tf.Variable(0, trainable=False)
             decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
+            logistic_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss, var_list=logistic_params)
         elif FLAGS.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+            logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
         else:  #rmsprop
             optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
+            logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
 
         #pre-learn the idf-like function as any feature selection function
         x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
@@ -211,7 +217,8 @@ def main(argv=None):
         l_ave=0.0
         timeref = time.time()
         for step in range(1,50000):
-            _,l = session.run([optimizer, loss], feed_dict=as_feed_dict(data.train_batch(batch_size), dropout=True))
+            optimizer_ = optimizer if step > 10000 else logistic_optimizer
+            _,l = session.run([optimizer_, loss], feed_dict=as_feed_dict(data.train_batch(batch_size), dropout=True))
             l_ave += l
 
             if step % show_step == 0:
@@ -252,9 +259,9 @@ def main(argv=None):
 
             print 'Weighting documents'
             devel_x, devel_y = data.get_devel_set()
-            devel_x_weighted = normalized.eval(feed_dict={x:devel_x})
+            devel_x_weighted = normalized.eval(feed_dict={x:devel_x, keep_p:1.0})
             test_x, test_y   = data.test_batch()
-            test_x_weighted  = normalized.eval(feed_dict={x:test_x})
+            test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
 
             train_classifiers(devel_x_weighted, devel_y, test_x_weighted, test_y, fout)
 
