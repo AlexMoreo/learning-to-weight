@@ -66,35 +66,32 @@ def main(argv=None):
             #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
             #return tf.reshape(tfx_stack, shape=[-1, x_size])
 
+        filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.01 / math.sqrt(FLAGS.hidden)), name='filters')
+        filter_bias = tf.Variable(tf.zeros(FLAGS.hidden), name='filters_bias')
         def idf_like(info_arr):
             #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
             #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
-            filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.01 / math.sqrt(FLAGS.hidden)))
             #filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.00001))
-            filter_bias = tf.Variable(tf.zeros(FLAGS.hidden))
             #filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
 
-            print info_arr.get_shape()
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
-            print n_results
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
             relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
             relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             idf = tf.reshape(add_layer(reshape,1), [n_results])
-            print idf.get_shape()
             return idf
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
 
-        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits,y))
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
 
         y_ = tf.nn.sigmoid(logits)
 
-        prediction = tf.round(y_) # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
+        prediction = tf.round(y_)  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
         correct_prediction = tf.equal(y, prediction)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
 
@@ -104,7 +101,7 @@ def main(argv=None):
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
         elif FLAGS.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
-        else: #rmsprop
+        else:  #rmsprop
             optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
 
         #pre-learn the idf-like function as any feature selection function
