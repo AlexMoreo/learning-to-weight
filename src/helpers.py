@@ -31,6 +31,7 @@ def savemodel(session, step, saver, checkpoint_dir, run_name, posfix=""):
 def projection_weights(orig_size, target_size, name=''):
     weight = tf.Variable(tf.truncated_normal([orig_size, target_size], stddev=1.0 / math.sqrt(target_size)), name=name + 'weight')
     bias = tf.Variable(tf.zeros([target_size]), name=name + 'bias')
+    print 'Projection weights: %s' % name
     return weight, bias
 
 def ff_multilayer(ini_layer, hidden_sizes, non_linear_function=tf.nn.relu, keep_prob=None, name=''):
@@ -87,7 +88,7 @@ def restore_checkpoint(saver, session, checkpoint_dir, checkpoint_path=None):
         saver.restore(session, os.path.join(checkpoint_dir,checkpoint_path))
 
 class TensorboardData:
-    def __init__(self, generate_tensorboard_data):
+    def __init__(self, generate_tensorboard_data=True):
         self.generate_tensorboard_data=generate_tensorboard_data
 
     def open(self, summaries_dir, run_name, graph):

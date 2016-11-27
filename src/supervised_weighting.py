@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
+#TODO: idf-like as a multilayer feedforward (not as a conv)
 #TODO: train the logistic part first, with tf-ig fixed weights
 #TODO: parallelize supervised info vector
 #TODO: balanced batchs
@@ -68,54 +69,70 @@ def main(argv=None):
             #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
             #return tf.reshape(tfx_stack, shape=[-1, x_size])
 
-        filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.01 / math.sqrt(FLAGS.hidden)), name='filters')
-        filter_bias = tf.Variable(tf.zeros(FLAGS.hidden), name='filters_bias')
+
+
         def idf_like(info_arr):
             #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
-            #filter = tf.Variable(tf.truncated_normal([info_by_feat, 1, FLAGS.hidden], stddev=1.0 / math.sqrt(FLAGS.hidden)))
-            #filter = tf.Variable(tf.random_normal([info_by_feat, 1, FLAGS.hidden], stddev=.00001))
-            #filter_bias = tf.Variable(tf.random_uniform([FLAGS.hidden], 0.01, 1.0 / math.sqrt(FLAGS.hidden)))
+            filter_weights = tf.get_variable('idf_weights', [info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
+            filter_biases  = tf.get_variable('idf_biases', [FLAGS.hidden], initializer=tf.constant_initializer(0.0))
+            proj_weights   = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
+            proj_biases    = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
 
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
-            conv = tf.nn.conv1d(idf_tensor, filters=filter, stride=info_by_feat, padding='VALID')
-            relu = tf.nn.relu(tf.nn.bias_add(conv, filter_bias))
+            conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
+            relu = tf.nn.relu(tf.nn.bias_add(conv, filter_biases))
             relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
-            idf = tf.reshape(add_layer(reshape,1), [n_results], name='idf-proj')
+            idf = tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results])
             return idf
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
-        logits = tf.squeeze(add_linear_layer(normalized, 1, name='out_logistic_function'))
+        log_weights = tf.get_variable('log_weights', [data.num_features(), 1], initializer=tf.random_normal_initializer(stddev=.1))
+        log_bias = tf.get_variable('log_biases', [1], initializer=tf.constant_initializer(0.0))
+        logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, log_weights), log_bias))
 
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
 
         y_ = tf.nn.sigmoid(logits)
-
         prediction = tf.round(y_)  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
         correct_prediction = tf.equal(y, prediction)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
 
-        logistic_params = ['out_logistic_functionweight', 'out_logistic_functionbias']
+        logistic_params = [log_weights, log_bias]
         if FLAGS.optimizer == 'sgd':
             op_step = tf.Variable(0, trainable=False)
             decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
+            end2end_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
             logistic_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss, var_list=logistic_params)
         elif FLAGS.optimizer == 'adam':
-            optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+            end2end_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
             logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
         else:  #rmsprop
-            optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
+            end2end_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
             logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
 
         #pre-learn the idf-like function as any feature selection function
         x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
         y_func = tf.placeholder(tf.float32, shape=[None])
+        tf.get_variable_scope().reuse_variables()
         idf_prediction = idf_like(x_func)
         idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
         idf_optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(idf_loss) #0.0001
+
+        loss_summary = tf.scalar_summary('loss/loss', loss)
+        idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
+        log_weight_sum = variable_summaries(log_weights, 'logistic/weight', 'weights')
+        log_bias_sum = variable_summaries(log_bias, 'logistic/bias', 'bias')
+        idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
+        idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
+        idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
+        idf_projbias_sum = variable_summaries(tf.get_variable('proj_bias'), 'idf/proj/bias', 'projbias')
+        idf_summaries = tf.merge_summary([idfloss_summary, idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
+        log_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum])
+        end2end_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum,
+                                      idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -127,24 +144,15 @@ def main(argv=None):
         return {x: x_, y: y_, keep_p: drop_keep_p if dropout else 1.0}
 
     best_val = dict({'acc':0.0, 'f1':0.0, 'p':0.0, 'r':0.0})
-    best_test = dict({'acc': 0.0, 'f1': 0.0, 'p': 0.0, 'r': 0.0})
 
-    def evaluation(batch, best_score):
-        eval_dict = as_feed_dict(batch, dropout=False)
-        acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
-        f1 = f1_score(eval_dict[y], predictions, average='binary', pos_label=1)
-        p = precision_score(eval_dict[y], predictions, average='binary', pos_label=1)
-        r = recall_score(eval_dict[y], predictions, average='binary', pos_label=1)
-        improvement = (f1 > best_score['f1'])
-        if not improvement and f1 == 0.0:
-            improvement = (p > best_score['p']) or (r > best_score['r'])
-        best_score['acc'] = max(acc, best_score['acc'])
-        best_score['f1'] = max(f1, best_score['f1'])
-        best_score['p'] = max(p, best_score['p'])
-        best_score['r'] = max(r, best_score['r'])
-        return acc, f1, p, r, improvement
+    def evaluation_measures(predictions, true_labels):
+        f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
+        p = precision_score(true_labels, predictions, average='binary', pos_label=1)
+        r = recall_score(true_labels, predictions, average='binary', pos_label=1)
+        return f1, p, r
 
     checkpoint_dir = FLAGS.checkpointdir
+    summaries_dir = FLAGS.summariesdir
     create_if_not_exists(checkpoint_dir)
     pc = data.class_prevalence()
 
@@ -183,17 +191,23 @@ def main(argv=None):
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
+        tensorboard = TensorboardData()
+        tensorboard.open(summaries_dir, 'sup_weight', session.graph)
 
         #pre-train the idf-like parameters
         if FLAGS.pretrain:
             l_ave = 0.0
             show_step = 1000
+            idf_steps = 0
             for step in range(1, 40001):
                 x_, y_ = pretrain_batch()
                 _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_, keep_p:drop_keep_p})
                 l_ave += l
+                idf_steps += 1
 
                 if step % show_step == 0:
+                    sum = idf_summaries.eval({x_func: x_, y_func: y_, keep_p:drop_keep_p})
+                    tensorboard.add_train_summary(sum, step)
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
                     if l_ave < 0.0003:
@@ -204,8 +218,7 @@ def main(argv=None):
                 if FLAGS.plot and step % (show_step*10) == 0:
                     x1_, x2_ = plot_coordinates(div=40)
                     y_ = []
-                    x_ = zip(x1_, x2_)
-                    for xi_ in x_:
+                    for xi_ in zip(x1_, x2_):
                         y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p:1.0}))
                     y_ = np.reshape(y_, len(x1_))
                     comp_plot(x1_, x2_, y_)
@@ -216,30 +229,46 @@ def main(argv=None):
         early_stop_steps = 10
         l_ave=0.0
         timeref = time.time()
+        logistic_optimization_phase = 10000
         for step in range(1,50000):
-            optimizer_ = optimizer if step > 10000 else logistic_optimizer
-            _,l = session.run([optimizer_, loss], feed_dict=as_feed_dict(data.train_batch(batch_size), dropout=True))
+            optimizer_ = end2end_optimizer if step > logistic_optimization_phase else logistic_optimizer
+            tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
+            _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
 
             if step % show_step == 0:
+                sum = end2end_summaries.eval(feed_dict=tr_dict)
+                tensorboard.add_train_summary(sum, step+idf_steps)
                 #print('[step=%d][ep=%d][lr=%.5f] loss=%.7f' % (step, data.epoch, lr, l_ave / show_step))
-                print('[step=%d][ep=%d] loss=%.10f' % (step, data.epoch, l_ave / show_step))
+                print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, 'logistic' if step < logistic_optimization_phase else 'end2end', l_ave / show_step))
+                #print('[step=%d][ep=%d] loss=%.10f' % (step, data.epoch, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
 
-                acc, f1, p, r, improves = evaluation(data.val_batch(), best_score=best_val)
+                eval_dict = as_feed_dict(data.val_batch(), dropout=False)
+                acc, predictions, sum = session.run([accuracy, prediction, loss_summary], feed_dict=eval_dict)
+                tensorboard.add_valid_summary(sum, step)
+                f1, p, r = evaluation_measures(predictions, eval_dict[y])
+                improves = (f1 > best_val['f1'])
+                best_val['acc'] = max(acc, best_val['acc'])
+                best_val['f1'] = max(f1, best_val['f1'])
+                best_val['p'] = max(p, best_val['p'])
+                best_val['r'] = max(r, best_val['r'])
+
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
-                elif f1 == 0.0 and last_improvement > 5:
-                    print 'Reinitializing model parameters'
-                    tf.initialize_all_variables().run()
-                    last_improvement = 0
+                #elif f1 == 0.0 and last_improvement > 5:
+                #    print 'Reinitializing model parameters'
+                #    tf.initialize_all_variables().run()
+                #    last_improvement = 0
 
-                acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
+                eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+                acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
+                f1, p, r = evaluation_measures(predictions, eval_dict[y])
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
 
                 timeref = time.time()
@@ -249,12 +278,15 @@ def main(argv=None):
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
+        tensorboard.close()
         fout_path = 'out-'+FLAGS.optimizer+'-'+str(FLAGS.lrate)+('-norm' if FLAGS.normalize else '')+'-c'+str(pos_cat_code)+'.txt'
         with open(fout_path, 'w') as fout:
 
             print 'Test evaluation:'
             restore_checkpoint(saver, session, checkpoint_dir)
-            acc, f1, p, r, _ = evaluation(data.test_batch(), best_score=best_test)
+            eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+            acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
+            f1, p, r = evaluation_measures(predictions, eval_dict[y])
             tee('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r), fout)
 
             print 'Weighting documents'
@@ -277,7 +309,8 @@ if __name__ == '__main__':
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam"] (default sgd)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
-    flags.DEFINE_string('checkpointdir', './model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
+    flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
+    flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "./summaries")')
     flags.DEFINE_boolean('pretrain', False, 'Pretrains the model parameters to mimic a given FS function (default False)')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
