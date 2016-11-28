@@ -69,8 +69,6 @@ def main(argv=None):
             #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
             #return tf.reshape(tfx_stack, shape=[-1, x_size])
 
-
-
         def idf_like(info_arr):
             #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
             filter_weights = tf.get_variable('idf_weights', [info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
@@ -157,9 +155,9 @@ def main(argv=None):
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
-        return information_gain(tpr, fpr, pc)
+        #return information_gain(tpr, fpr, pc)
         #return chi_square(tpr, fpr, pc)
-        #return gss(tpr, fpr, pc)
+        return gss(tpr, fpr, pc)
 
     def sample():
         x = [random.random() for _ in range(info_by_feat)]
@@ -226,11 +224,11 @@ def main(argv=None):
         show_step = 100
         valid_step = show_step * 10
         last_improvement = 0
-        early_stop_steps = 10
+        early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = 10000
-        for step in range(1,50000):
+        for step in range(1,100000):
             optimizer_ = end2end_optimizer if step > logistic_optimization_phase else logistic_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
@@ -262,9 +260,9 @@ def main(argv=None):
                 if improves:
                     savemodel(session, step, saver, checkpoint_dir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
-                #    print 'Reinitializing model parameters'
-                #    tf.initialize_all_variables().run()
-                #    last_improvement = 0
+                    #    print 'Reinitializing model parameters'
+                    #tf.initialize_all_variables().run()
+                    #last_improvement = 0
 
                 eval_dict = as_feed_dict(data.test_batch(), dropout=False)
                 acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
