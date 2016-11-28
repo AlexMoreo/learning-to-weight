@@ -195,10 +195,10 @@ def main(argv=None):
         tensorboard.open(summaries_dir, 'sup_weight', session.graph)
 
         #pre-train the idf-like parameters
+        idf_steps = 0
         if FLAGS.pretrain:
             l_ave = 0.0
             show_step = 1000
-            idf_steps = 0
             for step in range(1, 40001):
                 x_, y_ = pretrain_batch()
                 _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_, keep_p:drop_keep_p})
@@ -249,7 +249,7 @@ def main(argv=None):
 
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
                 acc, predictions, sum = session.run([accuracy, prediction, loss_summary], feed_dict=eval_dict)
-                tensorboard.add_valid_summary(sum, step)
+                tensorboard.add_valid_summary(sum, step+idf_steps)
                 f1, p, r = evaluation_measures(predictions, eval_dict[y])
                 improves = (f1 > best_val['f1'])
                 best_val['acc'] = max(acc, best_val['acc'])
