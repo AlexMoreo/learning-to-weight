@@ -206,6 +206,7 @@ def main(argv=None):
 
         #pre-train the idf-like parameters
         idf_steps = 0
+        epsilon = 0.0003
         if FLAGS.pretrain != 'None':
             l_ave = 0.0
             show_step = 1000
@@ -220,11 +221,15 @@ def main(argv=None):
                     tensorboard.add_train_summary(sum, step)
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
-                    if FLAGS.plot and (step % (show_step*10) == 0 or l_ave < 0.0003):
-                        print 'Error < 0.0003, proceed'
+                    if l_ave < epsilon:
+                        print 'Error < '+str(epsilon)+', proceed'
+                        if FLAGS.plot:
+                            plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_pretrain_' + str(step) + '.png'))
+                        break
+
+                    if FLAGS.plot and step % (show_step * 10) == 0:
                         plotpath = os.path.join(plotdir, 'idf_pretrain_' + str(step) + '.png')
                         if FLAGS.plot: plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath)
-                        break
                     l_ave = 0.0
 
         show_step = 100
