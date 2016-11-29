@@ -3,7 +3,7 @@ import tensorflow as tf
 from helpers import *
 from pprint import pprint
 import time
-from feature_selection_function import *
+import feature_selection_function
 from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
@@ -51,6 +51,7 @@ def main(argv=None):
     x_size = data.num_features()
     batch_size = FLAGS.batchsize
     drop_keep_p = 0.8
+
 
     graph = tf.Graph()
     with graph.as_default():
@@ -117,7 +118,8 @@ def main(argv=None):
         tf.get_variable_scope().reuse_variables()
         idf_prediction = idf_like(x_func)
         idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-        idf_optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(idf_loss) #0.0001
+        #idf_optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(idf_loss) #0.0001
+        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
         loss_summary = tf.scalar_summary('loss/loss', loss)
         idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
@@ -152,12 +154,13 @@ def main(argv=None):
     checkpoint_dir = FLAGS.checkpointdir
     summaries_dir = FLAGS.summariesdir
     create_if_not_exists(checkpoint_dir)
+    plotdir = FLAGS.plotdir
+    create_if_not_exists(plotdir)
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
-        #return information_gain(tpr, fpr, pc)
-        #return chi_square(tpr, fpr, pc)
-        return gss(tpr, fpr, pc)
+        fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
+        return fsmethod(tpr, fpr, pc)
 
     def sample():
         x = [random.random() for _ in range(info_by_feat)]
@@ -174,7 +177,7 @@ def main(argv=None):
         points = itertools.product(x1_div, x2_div)
         return zip(*[p for p in points])
 
-    def comp_plot(x1, x2, y_):
+    def comp_plot(x1, x2, y_, show=True, plotpath=None):
         y = [supervised_idf(x1[i], x2[i]) for i in range(len(x1))]
         fig = plt.figure(figsize=plt.figaspect(0.4))
         ax = fig.add_subplot(1, 2, 1, projection='3d')
@@ -183,7 +186,16 @@ def main(argv=None):
         ax = fig.add_subplot(1, 2, 2, projection='3d')
         ax.set_title('Learnt function')
         ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet)
-        plt.show()
+        if show: plt.show()
+        if plotpath: plt.savefig(plotpath)
+
+    def plot_idf_learnt(show=True, plotpath=None):
+        x1_, x2_ = plot_coordinates(div=40)
+        y_ = []
+        for xi_ in zip(x1_, x2_):
+            y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p: 1.0}))
+        y_ = np.reshape(y_, len(x1_))
+        comp_plot(x1_, x2_, y_, show=show, plotpath=plotpath)
 
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
@@ -194,7 +206,7 @@ def main(argv=None):
 
         #pre-train the idf-like parameters
         idf_steps = 0
-        if FLAGS.pretrain:
+        if FLAGS.pretrain != 'None':
             l_ave = 0.0
             show_step = 1000
             for step in range(1, 40001):
@@ -208,18 +220,12 @@ def main(argv=None):
                     tensorboard.add_train_summary(sum, step)
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
-                    if l_ave < 0.0003:
+                    if FLAGS.plot and (step % (show_step*10) == 0 or l_ave < 0.0003):
                         print 'Error < 0.0003, proceed'
+                        plotpath = os.path.join(plotdir, 'idf_pretrain_' + str(step) + '.png')
+                        if FLAGS.plot: plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath)
                         break
                     l_ave = 0.0
-
-                if FLAGS.plot and step % (show_step*10) == 0:
-                    x1_, x2_ = plot_coordinates(div=40)
-                    y_ = []
-                    for xi_ in zip(x1_, x2_):
-                        y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p:1.0}))
-                    y_ = np.reshape(y_, len(x1_))
-                    comp_plot(x1_, x2_, y_)
 
         show_step = 100
         valid_step = show_step * 10
@@ -229,7 +235,7 @@ def main(argv=None):
         timeref = time.time()
         logistic_optimization_phase = 10000
         for step in range(1,100000):
-            optimizer_ = end2end_optimizer if step > logistic_optimization_phase else logistic_optimizer
+            optimizer_ = end2end_optimizer if (FLAGS.pretrain==False or step > logistic_optimization_phase) else logistic_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
@@ -258,7 +264,7 @@ def main(argv=None):
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savemodel(session, step, saver, checkpoint_dir, 'model')
+                    savemodel(session, step+idf_steps, saver, checkpoint_dir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
                     #    print 'Reinitializing model parameters'
                     #tf.initialize_all_variables().run()
@@ -268,6 +274,9 @@ def main(argv=None):
                 acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
                 f1, p, r = evaluation_measures(predictions, eval_dict[y])
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
+
+                if FLAGS.plot:
+                    plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_' + str(step+idf_steps) + '.png'))
 
                 timeref = time.time()
 
@@ -305,16 +314,35 @@ if __name__ == '__main__':
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
     flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
-    flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam"] (default sgd)')
+    flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default sgd)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
-    flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "./model")')
-    flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "./summaries")')
-    flags.DEFINE_boolean('pretrain', False, 'Pretrains the model parameters to mimic a given FS function (default False)')
-    flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
+    flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
+    flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
     flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
+    flags.DEFINE_string('plotdir', '../plot', 'Directory for plots, if --plot is True (default "../plot")')
+    flags.DEFINE_boolean('plotshow', True, 'Shows the idf-like plot, if --plot is True (default True)')
+    flags.DEFINE_string('pretrain', 'None', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default None)')
+    flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
+
     #flags.DEFINE_string('fout', '', 'Output file')
 
     err_exit(FLAGS.optimizer not in ['sgd','adam', 'rmsprop'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
+    err_exit(FLAGS.pretrain not in ['None', 'infogain', 'chisquare', 'gss'], err_msg="Param error: pretrain should be either 'None', 'infogain', 'chisquare', or 'gss'")
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     tf.app.run()
+
+    # run data fields:
+    # classifier: linearsvm, random forest, etc.
+    # cross-val parameter tunning: C=...
+    # num_features: 10000
+    # doc vectors: count, binary, tf, tfidf, bm25, hashing, learnt
+    # dataset: 20newsgroup, rvc1, ...
+    # category: 0, 1, 2, ...
+    # batchsize: 32, 64, ...
+    # hidden: 100, 1000
+    # lrate: 0.005
+    # optimizer: sgd, adam, rmsprop
+    # normalize: true or false
+    # pretrain: none, ig, chi2, gss
+    #

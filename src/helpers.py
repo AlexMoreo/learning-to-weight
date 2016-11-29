@@ -9,17 +9,17 @@ import shutil
 #--------------------------------------------------------------
 def variable_summaries(var, scope_name, name):
     """Attach summaries to a Tensor."""
-    embeddings_summaries = []
+    var_summaries = []
     with tf.name_scope(scope_name):
         mean = tf.reduce_mean(var)
-        embeddings_summaries.append(tf.scalar_summary(scope_name + '/mean', mean))
+        var_summaries.append(tf.scalar_summary(scope_name + '/mean', mean))
         with tf.name_scope('stddev'):
             stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
-        embeddings_summaries.append(tf.scalar_summary(scope_name + '/sttdev', stddev))
-        embeddings_summaries.append(tf.scalar_summary(scope_name + '/max', tf.reduce_max(var)))
-        embeddings_summaries.append(tf.scalar_summary(scope_name + '/min', tf.reduce_min(var)))
-        embeddings_summaries.append(tf.histogram_summary(scope_name + '/' + name, var))
-    return embeddings_summaries
+        var_summaries.append(tf.scalar_summary(scope_name + '/sttdev', stddev))
+        #var_summaries.append(tf.scalar_summary(scope_name + '/max', tf.reduce_max(var)))
+        #var_summaries.append(tf.scalar_summary(scope_name + '/min', tf.reduce_min(var)))
+        var_summaries.append(tf.histogram_summary(scope_name + '/' + name, var))
+    return var_summaries
 
 def savemodel(session, step, saver, checkpoint_dir, run_name, posfix=""):
     sys.stdout.write('Saving model...')

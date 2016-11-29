@@ -1,5 +1,41 @@
 import math
 
+def get_probs(tpr, fpr, pc):
+    # tpr = p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
+    # fpr = p(t|_c) = p(fp)/p(_c) = p(fp)/(p(fp)+p(tn))
+    pnc = 1.0 - pc
+    tp = tpr * pc
+    fn = pc - tp
+    fp = fpr * pnc
+    tn = pnc - fp
+    return ContTable(tp=tp, fn=fn, fp=fp, tn=tn)
+
+def infogain(tpr, fpr, pc):
+    cell = get_probs(tpr, fpr, pc)
+
+    def ig_factor(p_tc, p_t, p_c):
+        den = p_t * p_c
+        if den != 0.0 and p_tc != 0:
+            return p_tc * math.log(p_tc / den, 2)
+        else:
+            return 0.0
+
+    return ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) \
+           + ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
+
+def chisquare(tpr, fpr, pc):
+    cell = get_probs(tpr, fpr, pc)
+    den = cell.p_f() * cell.p_not_f() * cell.p_c() * cell.p_not_c()
+    if den==0.0: return 0.0
+    num = gss(tpr,fpr,pc)**2
+    return num / den
+
+
+def gss(tpr, fpr, pc):
+    cell = get_probs(tpr, fpr, pc)
+    return cell.p_tp()*cell.p_tn() - cell.p_fp()*cell.p_fn()
+
+
 class ContTable:
 
     def __init__(self, tp=0, tn=0, fp=0, fn=0):
@@ -41,38 +77,3 @@ class ContTable:
     def fpr(self):
         _c = 1.0*self.get_not_c()
         return self.fp / _c if _c > 0.0 else 0.0
-
-def get_probs(tpr, fpr, pc):
-    # tpr = p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
-    # fpr = p(t|_c) = p(fp)/p(_c) = p(fp)/(p(fp)+p(tn))
-    pnc = 1.0 - pc
-    tp = tpr * pc
-    fn = pc - tp
-    fp = fpr * pnc
-    tn = pnc - fp
-    return ContTable(tp=tp, fn=fn, fp=fp, tn=tn)
-
-def information_gain(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
-
-    def ig_factor(p_tc, p_t, p_c):
-        den = p_t * p_c
-        if den != 0.0 and p_tc != 0:
-            return p_tc * math.log(p_tc / den, 2)
-        else:
-            return 0.0
-
-    return ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) \
-           + ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
-
-def chi_square(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
-    den = cell.p_f() * cell.p_not_f() * cell.p_c() * cell.p_not_c()
-    if den==0.0: return 0.0
-    num = gss(tpr,fpr,pc)**2
-    return num / den
-
-
-def gss(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
-    return cell.p_tp()*cell.p_tn() - cell.p_fp()*cell.p_fn()
