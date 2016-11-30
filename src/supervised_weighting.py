@@ -163,7 +163,7 @@ def main(argv=None):
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
-        if FLAGS.pretrain is None: return 0.0
+        if FLAGS.pretrain == 'None': return 0.0
         fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
         return fsmethod(tpr, fpr, pc)
 
@@ -187,9 +187,13 @@ def main(argv=None):
         fig = plt.figure(figsize=plt.figaspect(0.4))
         ax = fig.add_subplot(1, 2, 1, projection='3d')
         ax.set_title('Target function')
+        ax.set_xlabel('tpr')
+        ax.set_ylabel('fpr')
         ax.plot_trisurf(x1, x2, y, linewidth=0.2, cmap=cm.jet)
         ax = fig.add_subplot(1, 2, 2, projection='3d')
         ax.set_title('Learnt function')
+        ax.set_xlabel('tpr')
+        ax.set_ylabel('fpr')
         ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet)
         if show: plt.show()
         if plotpath: plt.savefig(plotpath)
