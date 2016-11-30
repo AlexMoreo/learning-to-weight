@@ -26,6 +26,7 @@ from matplotlib import cm
 #TODO: select FS function, and plot to file
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
+#TODO: plots: add C, add steps, add (tpr,fnr) points,
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
@@ -80,6 +81,7 @@ def main(argv=None):
             proj_weights   = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
             proj_biases    = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
 
+            #activation=tf.nn.relu
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
@@ -87,7 +89,7 @@ def main(argv=None):
             relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             #idf = tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results])
-            idf = tf.nn.relu(tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results]))
+            idf = tf.reshape(tf.nn.sigmoid(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)), [n_results])
             return idf
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
@@ -182,7 +184,7 @@ def main(argv=None):
         points = itertools.product(x1_div, x2_div)
         return zip(*[p for p in points])
 
-    def comp_plot(x1, x2, y_, show=True, plotpath=None):
+    def comp_plot(x1, x2, y_, step=None, show=True, plotpath=None):
         y = [supervised_idf(x1[i], x2[i]) for i in range(len(x1))]
         fig = plt.figure(figsize=plt.figaspect(0.4))
         ax = fig.add_subplot(1, 2, 1, projection='3d')
@@ -191,20 +193,20 @@ def main(argv=None):
         ax.set_ylabel('fpr')
         ax.plot_trisurf(x1, x2, y, linewidth=0.2, cmap=cm.jet)
         ax = fig.add_subplot(1, 2, 2, projection='3d')
-        ax.set_title('Learnt function')
+        ax.set_title('Learnt function' + (' (%d steps)'%step if step else ''))
         ax.set_xlabel('tpr')
         ax.set_ylabel('fpr')
         ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet)
         if show: plt.show()
         if plotpath: plt.savefig(plotpath)
 
-    def plot_idf_learnt(show=True, plotpath=None):
+    def plot_idf_learnt(show=True, plotpath=None, step=None):
         x1_, x2_ = plot_coordinates(div=40)
         y_ = []
         for xi_ in zip(x1_, x2_):
             y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p: 1.0}))
         y_ = np.reshape(y_, len(x1_))
-        comp_plot(x1_, x2_, y_, show=show, plotpath=plotpath)
+        comp_plot(x1_, x2_, y_, show=show, plotpath=plotpath, step=step)
 
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
@@ -216,6 +218,7 @@ def main(argv=None):
         #pre-train the idf-like parameters
         idf_steps = 0
         epsilon = 0.0003
+        plots = 0
         if FLAGS.pretrain != 'None':
             l_ave = 0.0
             show_step = 1000
@@ -233,13 +236,17 @@ def main(argv=None):
                     if l_ave < epsilon:
                         print 'Error < '+str(epsilon)+', proceed'
                         if FLAGS.plot:
-                            plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_pretrain_' + str(step) + '.png'))
+                            plotpath = os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext)
+                            plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath, step=step)
+                            plots+=1
                         break
-
-                    if FLAGS.plot and step % (show_step * 10) == 0:
-                        plotpath = os.path.join(plotdir, 'idf_pretrain_' + str(step) + '.png')
-                        if FLAGS.plot: plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath)
                     l_ave = 0.0
+
+                if FLAGS.plot and step % FLAGS.plotsteps == 0:
+                    plotpath = os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext)
+                    if FLAGS.plot: plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath, step=step)
+                    plots += 1
+
 
         show_step = 100
         valid_step = show_step * 10
@@ -288,11 +295,11 @@ def main(argv=None):
                 acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
                 f1, p, r = evaluation_measures(predictions, eval_dict[y])
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
-
-                if FLAGS.plot:
-                    plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_' + str(step+idf_steps) + '.png'))
-
                 timeref = time.time()
+
+            if FLAGS.plot and step % FLAGS.plotsteps == 0:
+                plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext), step=step+idf_steps)
+                plots += 1
 
             #early stop if not improves after 10 validations
             if last_improvement >= early_stop_steps:
@@ -335,6 +342,8 @@ if __name__ == '__main__':
     flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
     flags.DEFINE_string('plotdir', '../plot', 'Directory for plots, if --plot is True (default "../plot")')
     flags.DEFINE_boolean('plotshow', True, 'Shows the idf-like plot, if --plot is True (default True)')
+    flags.DEFINE_string('plotext', '.pdf', 'Extension for the plot files (default ".pdf")')
+    flags.DEFINE_integer('plotsteps', 1000, 'Plot frequency, in training steps (default 1000)')
     flags.DEFINE_string('pretrain', 'None', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default None)')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
 
