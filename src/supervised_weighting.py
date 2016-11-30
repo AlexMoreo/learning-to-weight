@@ -83,7 +83,8 @@ def main(argv=None):
             relu = tf.nn.relu(tf.nn.bias_add(conv, filter_biases))
             relu = tf.nn.dropout(relu, keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
-            idf = tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results])
+            #idf = tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results])
+            idf = tf.nn.relu(tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results]))
             return idf
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
