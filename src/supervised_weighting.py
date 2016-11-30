@@ -10,9 +10,12 @@ from sklearn.preprocessing import normalize
 import sys
 from baseline_classification import train_classifiers
 import itertools
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
+
 
 #TODO: idf-like as a multilayer feedforward (not as a conv)
 #TODO: train the logistic part first, with tf-ig fixed weights
