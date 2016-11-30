@@ -160,6 +160,7 @@ def main(argv=None):
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
+        if FLAGS.pretrain is None: return 0.0
         fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
         return fsmethod(tpr, fpr, pc)
 
