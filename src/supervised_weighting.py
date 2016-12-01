@@ -9,12 +9,7 @@ from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
 from baseline_classification import train_classifiers
-import itertools
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
+
 
 
 #TODO: idf-like as a multilayer feedforward (not as a conv)
@@ -56,7 +51,7 @@ def main(argv=None):
     batch_size = FLAGS.batchsize
     drop_keep_p = 0.8
 
-
+    # graph definition --------------------------------------------------------------
     graph = tf.Graph()
     with graph.as_default():
         # Placeholders
@@ -85,12 +80,11 @@ def main(argv=None):
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
-            relu = tf.nn.relu(tf.nn.bias_add(conv, filter_biases))
-            relu = tf.nn.dropout(relu, keep_prob=keep_p)
+            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
-            #idf = tf.reshape(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases), [n_results])
-            idf = tf.reshape(tf.nn.sigmoid(tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)), [n_results])
-            return idf
+            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
+            if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
+            return tf.reshape(proj, [n_results])
 
         weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
@@ -149,8 +143,6 @@ def main(argv=None):
         x_, y_ = batch_parts
         return {x: x_, y: y_, keep_p: drop_keep_p if dropout else 1.0}
 
-    best_val = dict({'acc':0.0, 'f1':0.0, 'p':0.0, 'r':0.0})
-
     def evaluation_measures(predictions, true_labels):
         f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
         p = precision_score(true_labels, predictions, average='binary', pos_label=1)
@@ -160,53 +152,21 @@ def main(argv=None):
     checkpoint_dir = FLAGS.checkpointdir
     summaries_dir = FLAGS.summariesdir
     create_if_not_exists(checkpoint_dir)
-    plotdir = FLAGS.plotdir
-    create_if_not_exists(plotdir)
+
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
-        if FLAGS.pretrain == 'None': return 0.0
+        if FLAGS.pretrain == 'off': return 0.0
         fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
         return fsmethod(tpr, fpr, pc)
 
-    def sample():
-        x = [random.random() for _ in range(info_by_feat)]
-        y = supervised_idf(tpr=x[0], fpr=x[1])
-        return (x, y)
-
     def pretrain_batch(batch_size=1):
+        def sample():
+            x = [random.random() for _ in range(info_by_feat)]
+            y = supervised_idf(tpr=x[0], fpr=x[1])
+            return (x, y)
         next = [sample() for _ in range(batch_size)]
         return zip(*next)
-
-    def plot_coordinates(div=50):
-        x1_div = np.linspace(0.0, 1.0, div)
-        x2_div = np.linspace(0.0, 1.0, div)
-        points = itertools.product(x1_div, x2_div)
-        return zip(*[p for p in points])
-
-    def comp_plot(x1, x2, y_, step=None, show=True, plotpath=None):
-        y = [supervised_idf(x1[i], x2[i]) for i in range(len(x1))]
-        fig = plt.figure(figsize=plt.figaspect(0.4))
-        ax = fig.add_subplot(1, 2, 1, projection='3d')
-        ax.set_title('Target function')
-        ax.set_xlabel('tpr')
-        ax.set_ylabel('fpr')
-        ax.plot_trisurf(x1, x2, y, linewidth=0.2, cmap=cm.jet)
-        ax = fig.add_subplot(1, 2, 2, projection='3d')
-        ax.set_title('Learnt function' + (' (%d steps)'%step if step else ''))
-        ax.set_xlabel('tpr')
-        ax.set_ylabel('fpr')
-        ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet)
-        if show: plt.show()
-        if plotpath: plt.savefig(plotpath)
-
-    def plot_idf_learnt(show=True, plotpath=None, step=None):
-        x1_, x2_ = plot_coordinates(div=40)
-        y_ = []
-        for xi_ in zip(x1_, x2_):
-            y_.append(idf_prediction.eval(feed_dict={x_func: [xi_], keep_p: 1.0}))
-        y_ = np.reshape(y_, len(x1_))
-        comp_plot(x1_, x2_, y_, show=show, plotpath=plotpath, step=step)
 
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
@@ -215,10 +175,13 @@ def main(argv=None):
         tensorboard = TensorboardData()
         tensorboard.open(summaries_dir, 'sup_weight', session.graph)
 
-        #pre-train the idf-like parameters
+        # pre-train -------------------------------------------------
         idf_steps = 0
         epsilon = 0.0003
-        plots = 0
+        def idf_wrapper(x):
+            return idf_prediction.eval(feed_dict={x_func: [x], keep_p: 1.0})
+        plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir, supervised_idf, idf_wrapper)
+        plotsteps = 100
         if FLAGS.pretrain != 'None':
             l_ave = 0.0
             show_step = 1000
@@ -235,26 +198,22 @@ def main(argv=None):
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
                     if l_ave < epsilon:
                         print 'Error < '+str(epsilon)+', proceed'
-                        if FLAGS.plot:
-                            plotpath = os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext)
-                            plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath, step=step)
-                            plots+=1
                         break
                     l_ave = 0.0
 
-                if FLAGS.plot and step % FLAGS.plotsteps == 0:
-                    plotpath = os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext)
-                    if FLAGS.plot: plot_idf_learnt(show=FLAGS.plotshow, plotpath=plotpath, step=step)
-                    plots += 1
+                if FLAGS.plotmode == 'vid' and step % plotsteps == 0: plot.plot(step=step)
 
+            if FLAGS.plotmode in ['img', 'show']: plot.plot(step=step)
 
-        show_step = 100
+        # train -------------------------------------------------
+        show_step = plotsteps = 100
         valid_step = show_step * 10
         last_improvement = 0
         early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = 10000
+        best_f1 = 0.0
         for step in range(1,100000):
             optimizer_ = end2end_optimizer if (FLAGS.pretrain==False or step > logistic_optimization_phase) else logistic_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
@@ -264,23 +223,18 @@ def main(argv=None):
             if step % show_step == 0:
                 sum = end2end_summaries.eval(feed_dict=tr_dict)
                 tensorboard.add_train_summary(sum, step+idf_steps)
-                #print('[step=%d][ep=%d][lr=%.5f] loss=%.7f' % (step, data.epoch, lr, l_ave / show_step))
-                print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, 'logistic' if step < logistic_optimization_phase else 'end2end', l_ave / show_step))
-                #print('[step=%d][ep=%d] loss=%.10f' % (step, data.epoch, l_ave / show_step))
+                tr_phase = 'logistic' if step < logistic_optimization_phase else 'end2end'
+                print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
-
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
                 acc, predictions, sum = session.run([accuracy, prediction, loss_summary], feed_dict=eval_dict)
                 tensorboard.add_valid_summary(sum, step+idf_steps)
                 f1, p, r = evaluation_measures(predictions, eval_dict[y])
-                improves = (f1 > best_val['f1'])
-                best_val['acc'] = max(acc, best_val['acc'])
-                best_val['f1'] = max(f1, best_val['f1'])
-                best_val['p'] = max(p, best_val['p'])
-                best_val['r'] = max(r, best_val['r'])
+                improves = (f1 > best_f1)
+                best_f1 = max(best_f1, f1)
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
@@ -297,16 +251,18 @@ def main(argv=None):
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
-            if FLAGS.plot and step % FLAGS.plotsteps == 0:
-                plot_idf_learnt(show=FLAGS.plotshow, plotpath=os.path.join(plotdir, 'idf_' + str(plots) + FLAGS.plotext), step=step+idf_steps)
-                plots += 1
+            if FLAGS.plotmode=='vid' and step % plotsteps == 0:
+                plot.plot(step=step+idf_steps)
 
             #early stop if not improves after 10 validations
             if last_improvement >= early_stop_steps:
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
+        if FLAGS.plotmode in ['img', 'show']: plot.plot(step=step)
         tensorboard.close()
+
+        # output -------------------------------------------------
         fout_path = 'out-'+FLAGS.optimizer+'-'+str(FLAGS.lrate)+('-norm' if FLAGS.normalize else '')+'-c'+str(pos_cat_code)+'.txt'
         with open(fout_path, 'w') as fout:
 
@@ -339,20 +295,26 @@ if __name__ == '__main__':
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
     flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
-    flags.DEFINE_boolean('plot', False, 'Plots the idf-like function learnt')
-    flags.DEFINE_string('plotdir', '../plot', 'Directory for plots, if --plot is True (default "../plot")')
-    flags.DEFINE_boolean('plotshow', True, 'Shows the idf-like plot, if --plot is True (default True)')
-    flags.DEFINE_string('plotext', '.pdf', 'Extension for the plot files (default ".pdf")')
-    flags.DEFINE_integer('plotsteps', 1000, 'Plot frequency, in training steps (default 1000)')
-    flags.DEFINE_string('pretrain', 'None', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default None)')
+    flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
+    flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
+    #plot parameters
+    flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
+                                            '\n off: deactivated (default)'
+                                            '\n show: shows the plot during training'
+                                            '\n img: save images in pdf format'
+                                            '\n vid: generates a video showing the evolution by steps')
+    flags.DEFINE_string('plotdir', '../plot', 'Directory for plots, if --plot is True (default "../plot")')
 
-    #flags.DEFINE_string('fout', '', 'Output file')
+    err_param_range('optimizer', FLAGS.optimizer, ['sgd','adam', 'rmsprop'])
+    err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
+    err_param_range('plotmode',  FLAGS.plotmode, ['off', 'show', 'img', 'vid'])
 
-    err_exit(FLAGS.optimizer not in ['sgd','adam', 'rmsprop'],err_msg="Param error: optimizer should be either 'sgd' or 'adam'")
-    err_exit(FLAGS.pretrain not in ['None', 'infogain', 'chisquare', 'gss'], err_msg="Param error: pretrain should be either 'None', 'infogain', 'chisquare', or 'gss'")
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
+    if FLAGS.plotmode != 'show':
+        os.environ['MATPLOTLIB_USE'] = 'Agg' #ps
+    from plot_function import PlotIdf
     tf.app.run()
 
     # run data fields:

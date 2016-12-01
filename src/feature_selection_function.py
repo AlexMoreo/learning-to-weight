@@ -30,14 +30,11 @@ def chisquare(tpr, fpr, pc):
     num = gss(tpr,fpr,pc)**2
     return num / den
 
-
 def gss(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
     return cell.p_tp()*cell.p_tn() - cell.p_fp()*cell.p_fn()
 
-
 class ContTable:
-
     def __init__(self, tp=0, tn=0, fp=0, fn=0):
         self.tp=tp
         self.tn=tn

@@ -65,6 +65,11 @@ def err_exit(exit_condition=True, err_msg=""):
         print(err_msg)
         sys.exit()
 
+def err_param_range(param_name, param_value, valid_values):
+    err_exit(exit_condition=param_value not in valid_values,
+             err_msg='Param error: %s=%s should be one in %s' % (param_name, str(param_value), str(valid_values)))
+
+
 def notexist_exit(path):
     if isinstance(path, list):
         [notexist_exit(p) for p in path]
@@ -127,6 +132,7 @@ def count_trainable_parameters():
 def tee(outstring, fout):
     print outstring
     fout.write(outstring + '\n')
+
 
 
 
