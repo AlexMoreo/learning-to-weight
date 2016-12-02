@@ -13,6 +13,7 @@ from feature_selection_function import ContTable
 class Dataset:
     def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, dense=False, positive_cat=None, feat_sel=None):
         err_exit(vectorize not in ['hashing', 'tfidf', 'count', 'binary'], err_msg='Param vectorize should be one in "hashing", "tfidf", "count", or "binary"')
+        self.name = '20newsgroups'
         self.vectorize=vectorize
         self.dense=dense
         metadata = ('headers', 'footers', 'quotes') if delete_metadata else None
@@ -53,6 +54,9 @@ class Dataset:
         __binarize_codes(self.test.target,  self.positive_cat)
 
     def feature_selection(self, feat_sel):
+        if self.vectorize == 'hashing':
+            print 'Warning: feature selection ommitted when hashing is activated'
+            return
         if feat_sel is not None:
             print('Selecting %d most important features' % feat_sel)
             fs = SelectKBest(chi2, k=feat_sel)
@@ -69,6 +73,9 @@ class Dataset:
             self.weight_getter = self._get_none
         elif vectorize == 'tfidf':
             vectorizer = TfidfVectorizer(stop_words='english')
+            self.weight_getter = self._get_weights
+        elif vectorize == 'sublinear_tfidf':
+            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
             self.weight_getter = self._get_weights
         elif vectorize == 'count':
             vectorizer = CountVectorizer(stop_words='english')
@@ -117,9 +124,20 @@ class Dataset:
         return indices, values, weights
 
     def get_devel_set(self):
-        devel_rep = self._batch_getter(self.devel_vec)
-        labels = self.devel.target
+        devel_rep = self._batch_getter(self.devel_vec[self.devel_indexes])
+        labels = self.devel.target[self.devel_indexes]
         return devel_rep, labels
+
+    def get_train_set(self):
+        train_rep = self._batch_getter(self.devel_vec[self.train_indexes])
+        labels = self.devel.target[self.train_indexes]
+        return train_rep, labels
+
+    def get_validation_set(self):
+        return self.val_batch()
+
+    def get_test_set(self):
+        return self.test_batch()
 
     def train_batch(self, batch_size=64):
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
