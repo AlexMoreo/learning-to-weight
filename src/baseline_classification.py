@@ -39,14 +39,6 @@ def linear_svm(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    print('Best params %s: f-score %f' % (str(best_params), best_f1))
-    deX, deY = data.get_devel_set()
-    teX, teY = data.get_test_set()
-    svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual'], tol=best_params['tol']).fit(deX, deY)
-    teY_ = svm_.predict(teX)
-    acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-    print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
-
     results.add_empty_entry()
     results.set('classifier', 'LinearSVM')
     results.set('vectorizer', data.vectorize)
@@ -54,9 +46,22 @@ def linear_svm(data, results):
     results.set('dataset', data.name)
     results.set('category', data.positive_cat)
     results.set('run', 0)
-    results.set('notes', str(best_params))
-    results.set_all({'acc':acc, 'fscore':f1, 'precision':prec, 'recall':rec})
-    results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+
+    if best_f1:
+        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual'], tol=best_params['tol']).fit(deX, deY)
+        teY_ = svm_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+
+        results.set('notes', str(best_params))
+        results.set_all({'acc':acc, 'fscore':f1, 'precision':prec, 'recall':rec})
+        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+    else:
+        results.set('notes', '<not applicable>')
+
     results.commit()
 
 def random_forest(data, results):
@@ -84,18 +89,6 @@ def random_forest(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    print('Best params %s: f-score %f' % (str(best_params), best_f1))
-    deX, deY = data.get_devel_set()
-    teX, teY = data.get_test_set()
-    rf_ = RandomForestClassifier(n_estimators=best_params['n_estimators'],
-                                 criterion=best_params['criterion'],
-                                 max_features=best_params['max_features'],
-                                 class_weight=best_params['class_weight'],
-                                 n_jobs=-1).fit(deX, deY)
-    teY_ = rf_.predict(teX)
-    acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-    print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
-
     results.add_empty_entry()
     results.set('classifier', 'RandomForest')
     results.set('vectorizer', data.vectorize)
@@ -103,9 +96,26 @@ def random_forest(data, results):
     results.set('dataset', data.name)
     results.set('category', data.positive_cat)
     results.set('run', 0)
-    results.set('notes', str(best_params))
-    results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-    results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+
+    if best_f1:
+        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        rf_ = RandomForestClassifier(n_estimators=best_params['n_estimators'],
+                                     criterion=best_params['criterion'],
+                                     max_features=best_params['max_features'],
+                                     class_weight=best_params['class_weight'],
+                                     n_jobs=-1).fit(deX, deY)
+        teY_ = rf_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+
+        results.set('notes', str(best_params))
+        results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
+        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+    else:
+        results.set('notes', '<not applicable>')
+
     results.commit()
 
 def multinomial_nb(data, results):
@@ -125,14 +135,6 @@ def multinomial_nb(data, results):
         except ValueError:
             print 'Param configuration not supported, skip'
 
-    print('Best params %s: f-score %f' % (str(best_params), best_f1))
-    deX, deY = data.get_devel_set()
-    teX, teY = data.get_test_set()
-    nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
-    teY_ = nb_.predict(teX)
-    acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-    print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
-
     results.add_empty_entry()
     results.set('classifier', 'MultinomialNB')
     results.set('vectorizer', data.vectorize)
@@ -140,9 +142,20 @@ def multinomial_nb(data, results):
     results.set('dataset', data.name)
     results.set('category', data.positive_cat)
     results.set('run', 0)
-    results.set('notes', str(best_params))
-    results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-    results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+
+    if best_f1:
+        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
+        teY_ = nb_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+        results.set('notes', str(best_params))
+        results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
+        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+    else:
+        results.set('notes', '<not applicable>')
     results.commit()
 
     # svc = svm.SVC(kernel='linear', C=C).fit(X, Y)
