@@ -220,14 +220,9 @@ if __name__ == '__main__':
             print('Category %d (%s)' % (pos_cat_code, vectorizer))
 
 
-            data = Dataset(categories=None, vectorize='binary', delete_metadata=True, rep_mode='sparse',
-                           positive_cat=15, feat_sel=10000)
-            linear_svm(data, results)
-            sys.exit()
-
             feat_sel = 10000
             categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-            data = Dataset(categories=categories, vectorize=vectorizer, delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
+            data = Dataset(categories=categories, vectorize=vectorizer, delete_metadata=True, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
 
             linear_svm(data, results)
             multinomial_nb(data, results)
