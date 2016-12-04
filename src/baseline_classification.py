@@ -5,24 +5,36 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 import time
+from time import gmtime, strftime
 from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
 import pandas as pd
 
-class Classification:
-    def __init__(self, method, classifier):
-        self.method = method
-        self.classifier = classifier
+def init_row_result(classifier_name, data, run=0):
+    results.add_empty_entry()
+    results.set('classifier', classifier_name)
+    results.set('vectorizer', data.vectorize)
+    results.set('num_features', data.num_features())
+    results.set('dataset', data.name)
+    results.set('category', data.positive_cat)
+    results.set('run', run)
+
+def add_result_metric_scores(best_params, acc, f1, prec, rec, cont_table, init_time):
+    results.set('notes', str(best_params))
+    results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
+    results.set_all(cont_table)
+    results.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})
 
 def linear_svm(data, results):
-    param_c = [100.0, 10.0, 1.0, 0.1, 0.01]
+    param_c = [1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3]
     param_loss = ['hinge','squared_hinge']
     param_dual = [False, True]
     param_tol = [1, 1e-1, 1e-2, 1e-3, 1e-4]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
+    init_time = time.time()
     best_f1 = None
     for c in param_c:
         for l in param_loss:
@@ -39,13 +51,7 @@ def linear_svm(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    results.add_empty_entry()
-    results.set('classifier', 'LinearSVM')
-    results.set('vectorizer', data.vectorize)
-    results.set('num_features', data.num_features())
-    results.set('dataset', data.name)
-    results.set('category', data.positive_cat)
-    results.set('run', 0)
+    init_row_result('LinearSVM', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -56,13 +62,14 @@ def linear_svm(data, results):
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
 
-        results.set('notes', str(best_params))
-        results.set_all({'acc':acc, 'fscore':f1, 'precision':prec, 'recall':rec})
-        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
+
     else:
         results.set('notes', '<not applicable>')
 
     results.commit()
+
+
 
 def random_forest(data, results):
     param_n_estimators = [10, 25, 50, 100]
@@ -72,6 +79,7 @@ def random_forest(data, results):
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
     best_f1 = None
+    init_time = time.time()
     for n_estimators in param_n_estimators:
         for criterion in param_criterion:
             for max_features in param_max_features:
@@ -89,13 +97,7 @@ def random_forest(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    results.add_empty_entry()
-    results.set('classifier', 'RandomForest')
-    results.set('vectorizer', data.vectorize)
-    results.set('num_features', data.num_features())
-    results.set('dataset', data.name)
-    results.set('category', data.positive_cat)
-    results.set('run', 0)
+    init_row_result('RandomForest', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -110,9 +112,8 @@ def random_forest(data, results):
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
 
-        results.set('notes', str(best_params))
-        results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
+
     else:
         results.set('notes', '<not applicable>')
 
@@ -123,6 +124,7 @@ def multinomial_nb(data, results):
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
     best_f1 = None
+    init_time = time.time()
     for alpha in param_alpha:
         try:
             nb_ = MultinomialNB(alpha=alpha).fit(trX, trY)
@@ -135,13 +137,7 @@ def multinomial_nb(data, results):
         except ValueError:
             print 'Param configuration not supported, skip'
 
-    results.add_empty_entry()
-    results.set('classifier', 'MultinomialNB')
-    results.set('vectorizer', data.vectorize)
-    results.set('num_features', data.num_features())
-    results.set('dataset', data.name)
-    results.set('category', data.positive_cat)
-    results.set('run', 0)
+    init_row_result('MultinomialNB', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -151,21 +147,11 @@ def multinomial_nb(data, results):
         teY_ = nb_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
-        results.set('notes', str(best_params))
-        results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-        results.set_all(contingency_table(predictions=teY_, true_labels=teY))
+        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
     else:
         results.set('notes', '<not applicable>')
     results.commit()
 
-    # svc = svm.SVC(kernel='linear', C=C).fit(X, Y)
-    #print 'Training Gaussian SVM'
-    #rbf_svc = svm.SVC(kernel='rbf', C=C).fit(X, Y)
-    #evaluation(svm.LinearSVC(C=C).fit(trX, trY), teX, teY, 'Lin-SVM', fout)
-    #evaluation(svm.SVC(kernel='poly', C=C).fit(trX, trY), teX, teY, 'Poly-SVM')
-    #evaluation(KNeighborsClassifier(n_jobs=-1).fit(trX, trY), teX, teY, 'k-NN', fout)
-    #evaluation(DecisionTreeClassifier().fit(trX, trY), teX, teY, 'Decision Tree', fout)
-    #evaluation(MultinomialNB().fit(trX, trY), teX, teY, 'MultiNB', fout)
 
 def evaluation_metrics(predictions, true_labels):
     acc = accuracy_score(true_labels, predictions)
@@ -191,6 +177,9 @@ class ReusltTable:
                                        'dataset',  # 20newsgroup, rcv1, ...
                                        'category',
                                        'run',
+                                       'date',
+                                       'time',
+                                       'elapsedtime',
                                        'hiddensize',
                                        'lrate',
                                        'optimizer',
@@ -228,6 +217,14 @@ if __name__ == '__main__':
 
     for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
         for pos_cat_code in range(num_cats):
+            print('Category %d (%s)' % (pos_cat_code, vectorizer))
+
+
+            data = Dataset(categories=None, vectorize='binary', delete_metadata=True, rep_mode='sparse',
+                           positive_cat=15, feat_sel=10000)
+            linear_svm(data, results)
+            sys.exit()
+
             feat_sel = 10000
             categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
             data = Dataset(categories=categories, vectorize=vectorizer, delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)

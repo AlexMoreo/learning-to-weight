@@ -11,11 +11,12 @@ from sklearn.feature_selection import chi2
 from feature_selection_function import ContTable
 
 class Dataset:
-    def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, dense=False, positive_cat=None, feat_sel=None):
-        err_exit(vectorize not in ['hashing', 'tfidf', 'count', 'binary'], err_msg='Param vectorize should be one in "hashing", "tfidf", "count", or "binary"')
+    def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, rep_mode='sparse', positive_cat=None, feat_sel=None):
+        err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary'])
+        err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
         self.name = '20newsgroups'
         self.vectorize=vectorize
-        self.dense=dense
+        self.rep_mode=rep_mode
         metadata = ('headers', 'footers', 'quotes') if delete_metadata else None
         self.devel = fetch_20newsgroups(subset='train', categories=categories, remove=metadata)
         self.test  = fetch_20newsgroups(subset='test',  categories=categories, remove=metadata)
@@ -28,13 +29,16 @@ class Dataset:
         self.train_indexes = self.devel_indexes[:tr_val_split_point]
         self.valid_indexes = self.devel_indexes[tr_val_split_point:]
         self.test_indexes  = self._get_doc_indexes(self.test_vec)
-        if self.dense:
+        if self.rep_mode=='dense':
             self.devel_vec = self.devel_vec.todense()
             self.test_vec = self.test_vec.todense()
             self._batch_getter = self._dense_batch_getter
-        else:
-            #already sparse representation
+        elif self.rep_mode=='sparse':
+            # already sparse representation
             self._batch_getter = self._sparse_batch_getter
+        else: #sparse index
+            # already sparse representation
+            self._batch_getter = self._sparse_index_batch_getter
         if self.positive_cat is not None:
             pos_cat_name = self.devel.target_names[self.positive_cat]
             err_exit(pos_cat_name not in self.devel.target_names, 'Error. Positive category not in scope.')
@@ -111,6 +115,9 @@ class Dataset:
         return batch.data
 
     def _sparse_batch_getter(self, batch):
+        return batch
+
+    def _sparse_index_batch_getter(self, batch):
         indices, values = self.get_index_values(batch)
         weights = self.weight_getter(batch)
         return indices, values, weights
