@@ -11,21 +11,7 @@ from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
 import pandas as pd
-
-def init_row_result(classifier_name, data, run=0):
-    results.add_empty_entry()
-    results.set('classifier', classifier_name)
-    results.set('vectorizer', data.vectorize)
-    results.set('num_features', data.num_features())
-    results.set('dataset', data.name)
-    results.set('category', data.positive_cat)
-    results.set('run', run)
-
-def add_result_metric_scores(best_params, acc, f1, prec, rec, cont_table, init_time):
-    results.set('notes', str(best_params))
-    results.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-    results.set_all(cont_table)
-    results.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})
+from weighted_vectors import WeightedVectors
 
 def linear_svm(data, results):
     param_c = [1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3]
@@ -51,7 +37,7 @@ def linear_svm(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    init_row_result('LinearSVM', data)
+    results.init_row_result('LinearSVM', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -62,7 +48,9 @@ def linear_svm(data, results):
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
 
-        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
+        results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
 
     else:
         results.set('notes', '<not applicable>')
@@ -97,7 +85,7 @@ def random_forest(data, results):
                     except ValueError:
                         print 'Param configuration not supported, skip'
 
-    init_row_result('RandomForest', data)
+    results.init_row_result('RandomForest', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -112,7 +100,8 @@ def random_forest(data, results):
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
 
-        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
+        results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time,
+                                         notes=str(best_params))
 
     else:
         results.set('notes', '<not applicable>')
@@ -137,7 +126,7 @@ def multinomial_nb(data, results):
         except ValueError:
             print 'Param configuration not supported, skip'
 
-    init_row_result('MultinomialNB', data)
+    results.init_row_result('MultinomialNB', data)
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -147,7 +136,9 @@ def multinomial_nb(data, results):
         teY_ = nb_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
-        add_result_metric_scores(best_params, acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time)
+        results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
     else:
         results.set('notes', '<not applicable>')
     results.commit()
@@ -194,7 +185,6 @@ class ReusltTable:
         self.df.loc[len(self.df)] = [np.nan] * len(self.df.columns)
 
     def set(self, column, value):
-        #self.df.loc[len(self.df-1)][list(self.df.columns).index(column)] = value
         self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)] = value
 
     def set_all(self, dictionary):
@@ -204,19 +194,41 @@ class ReusltTable:
     def commit(self):
         self.df.to_csv(self.result_container, index=False)
 
+    def init_row_result(self, classifier_name, data, run=0):
+        self.add_empty_entry()
+        self.set('classifier', classifier_name)
+        self.set('vectorizer', data.vectorize)
+        self.set('num_features', data.num_features())
+        self.set('dataset', data.name)
+        self.set('category', data.positive_cat)
+        self.set('run', run)
+
+    def add_result_metric_scores(self, acc, f1, prec, rec, cont_table, init_time, notes=''):
+        self.set('notes', notes)
+        self.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
+        self.set_all(cont_table)
+        self.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})
+
 if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     #TODO parse params (num categories, feat sel, vectorizer (count, tf, tfidf, tfidf sublinear, bm25, hashing, binary, tf ig, tf others...), methods, read-from-model)
-    # puedo cambuar la score_function en SelectKBest
 
     result_container = '../results.csv'
     results = ReusltTable(result_container)
 
+
+
+    vecdir = '../vectors'
+    vecname = '20n_C0_F5000_H1000_lr0.00500_Oadam_NTrue_nTrue_Poff_R0.pickle'
+    data = WeightedVectors.unpickle(indir=vecdir, infile_name=vecname)
+    linear_svm(data, results)
+    results.commit()
+    sys.exit()
+
     num_cats = 20
 
-    #for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
-    for vectorizer in ['sublinear_tfidf']:
+    for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
         for pos_cat_code in range(num_cats):
             print('Category %d (%s)' % (pos_cat_code, vectorizer))
 
