@@ -215,7 +215,8 @@ if __name__ == '__main__':
 
     num_cats = 20
 
-    for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
+    #for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
+    for vectorizer in ['sublinear_tfidf']:
         for pos_cat_code in range(num_cats):
             print('Category %d (%s)' % (pos_cat_code, vectorizer))
 

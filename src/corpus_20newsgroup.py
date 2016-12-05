@@ -12,7 +12,7 @@ from feature_selection_function import ContTable
 
 class Dataset:
     def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, rep_mode='sparse', positive_cat=None, feat_sel=None):
-        err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary'])
+        err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf'])
         err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
         self.name = '20newsgroups'
         self.vectorize=vectorize
