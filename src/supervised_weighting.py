@@ -1,34 +1,36 @@
 import numpy as np
+import numpy as np
 import tensorflow as tf
 from helpers import *
 from pprint import pprint
 import time
+from time import gmtime, strftime
 import feature_selection_function
 from corpus_20newsgroup import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
-from baseline_classification import train_classifiers
+from weighted_vectors import WeightedVectors
+from classification_benchmark import *
+
+#from baseline_classification import train_classifiers
 
 
 
 #TODO: idf-like as a multilayer feedforward (not as a conv)
-#TODO: train the logistic part first, with tf-ig fixed weights
 #TODO: parallelize supervised info vector
 #TODO: balanced batchs
-#TODO: tensorboard
-#TODO: improve result out
-#TODO: select FS function, and plot to file
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 #TODO: plots: add C, add steps, add (tpr,fnr) points,
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
+    init_time = time.time()
     pos_cat_code = FLAGS.cat
-    feat_sel = FLAGS.fs
+    feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
     categories = None if not FLAGS.debug else ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, dense=True, positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
 
     if data.vectorize=='count':
         print('L1-normalize')
@@ -38,7 +40,7 @@ def main(argv=None):
     print("|Va|=%d" % data.num_val_documents())
     print("|Te|=%d" % data.num_test_documents())
     print("|V|=%d" % data.num_features())
-    print("|C|=%d, %s" % (data.num_categories(), str(data.get_ategories())))
+    print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
     print("Prevalence of positive class: %.3f" % data.class_prevalence())
 
     print('Getting supervised correlations')
@@ -95,9 +97,7 @@ def main(argv=None):
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
 
         y_ = tf.nn.sigmoid(logits)
-        prediction = tf.round(y_)  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
-        correct_prediction = tf.equal(y, prediction)
-        accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float")) * 100
+        prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
         logistic_params = [log_weights, log_bias]
         if FLAGS.optimizer == 'sgd':
@@ -143,16 +143,9 @@ def main(argv=None):
         x_, y_ = batch_parts
         return {x: x_, y: y_, keep_p: drop_keep_p if dropout else 1.0}
 
-    def evaluation_measures(predictions, true_labels):
-        f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
-        p = precision_score(true_labels, predictions, average='binary', pos_label=1)
-        r = recall_score(true_labels, predictions, average='binary', pos_label=1)
-        return f1, p, r
-
-    checkpoint_dir = FLAGS.checkpointdir
-    summaries_dir = FLAGS.summariesdir
-    create_if_not_exists(checkpoint_dir)
-
+    create_if_not_exists(FLAGS.checkpointdir)
+    create_if_not_exists(FLAGS.summariesdir)
+    create_if_not_exists(FLAGS.outdir)
     pc = data.class_prevalence()
 
     def supervised_idf(tpr, fpr):
@@ -173,7 +166,7 @@ def main(argv=None):
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
         tensorboard = TensorboardData()
-        tensorboard.open(summaries_dir, 'sup_weight', session.graph)
+        tensorboard.open(FLAGS.summariesdir, 'sup_weight', session.graph)
 
         # pre-train -------------------------------------------------
         idf_steps = 0
@@ -182,7 +175,7 @@ def main(argv=None):
             return idf_prediction.eval(feed_dict={x_func: [x], keep_p: 1.0})
         plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir, supervised_idf, idf_wrapper)
         plotsteps = 100
-        if FLAGS.pretrain != 'None':
+        if FLAGS.pretrain != 'off':
             l_ave = 0.0
             show_step = 1000
             for step in range(1, 40001):
@@ -214,11 +207,13 @@ def main(argv=None):
         timeref = time.time()
         logistic_optimization_phase = 10000
         best_f1 = 0.0
-        for step in range(1,100000):
-            optimizer_ = end2end_optimizer if (FLAGS.pretrain==False or step > logistic_optimization_phase) else logistic_optimizer
+        log_steps = 0
+        for step in range(1,FLAGS.maxsteps):
+            optimizer_ = end2end_optimizer if (FLAGS.pretrain=='off' or step > logistic_optimization_phase) else logistic_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
+            log_steps += 1
 
             if step % show_step == 0:
                 sum = end2end_summaries.eval(feed_dict=tr_dict)
@@ -230,24 +225,24 @@ def main(argv=None):
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
-                acc, predictions, sum = session.run([accuracy, prediction, loss_summary], feed_dict=eval_dict)
+                predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
                 tensorboard.add_valid_summary(sum, step+idf_steps)
-                f1, p, r = evaluation_measures(predictions, eval_dict[y])
+                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = (f1 > best_f1)
                 best_f1 = max(best_f1, f1)
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savemodel(session, step+idf_steps, saver, checkpoint_dir, 'model')
+                    savemodel(session, step+idf_steps, saver, FLAGS.checkpointdir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
                     #    print 'Reinitializing model parameters'
                     #tf.initialize_all_variables().run()
                     #last_improvement = 0
 
                 eval_dict = as_feed_dict(data.test_batch(), dropout=False)
-                acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
-                f1, p, r = evaluation_measures(predictions, eval_dict[y])
+                predictions = prediction.eval(feed_dict=eval_dict)
+                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
@@ -263,35 +258,65 @@ def main(argv=None):
         tensorboard.close()
 
         # output -------------------------------------------------
-        fout_path = 'out-'+FLAGS.optimizer+'-'+str(FLAGS.lrate)+('-norm' if FLAGS.normalize else '')+'-c'+str(pos_cat_code)+'.txt'
-        with open(fout_path, 'w') as fout:
+        print 'Test evaluation:'
+        restore_checkpoint(saver, session, FLAGS.checkpointdir)
+        eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+        predictions = prediction.eval(feed_dict=eval_dict)
+        acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
+        print('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
 
-            print 'Test evaluation:'
-            restore_checkpoint(saver, session, checkpoint_dir)
-            eval_dict = as_feed_dict(data.test_batch(), dropout=False)
-            acc, predictions = session.run([accuracy, prediction], feed_dict=eval_dict)
-            f1, p, r = evaluation_measures(predictions, eval_dict[y])
-            tee('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r), fout)
+        # if indicated, saves the result of the current logistic regressor
+        if FLAGS.resultcontainer:
+            results = ReusltTable(FLAGS.resultcontainer)
+            results.init_row_result('LogisticRegression', data, run=FLAGS.run)
+            results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
+                                             cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
+            results.commit()
 
-            print 'Weighting documents'
-            devel_x, devel_y = data.get_devel_set()
-            devel_x_weighted = normalized.eval(feed_dict={x:devel_x, keep_p:1.0})
-            test_x, test_y   = data.test_batch()
-            test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
+        print 'Weighting documents'
+        train_x, train_y = data.get_train_set()
+        train_x_weighted = normalized.eval(feed_dict={x: train_x, keep_p: 1.0})
+        val_x, val_y = data.get_validation_set()
+        val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
+        test_x, test_y   = data.test_batch()
+        test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
+        wv = WeightedVectors(method_name='SupervisedWeighting', from_dataset=data.name, from_category=FLAGS.cat,
+                             trX=train_x_weighted, trY=train_y,
+                             vaX=val_x_weighted, vaY=val_y,
+                             teX=test_x_weighted, teY=test_y,
+                             run_params_dic={'num_features':data.num_features(),
+                                             'date':strftime("%d-%m-%Y", gmtime()),
+                                             'hiddensize':FLAGS.hidden,
+                                             'lrate':FLAGS.lrate,
+                                             'optimizer':FLAGS.optimizer,
+                                             'normalize':FLAGS.normalize,
+                                             'nonnegative':FLAGS.forcepos,
+                                             'pretrain':FLAGS.pretrain,
+                                             'iterations':idf_steps+log_steps,
+                                             'notes':FLAGS.notes+('(val_f1%.4f)'%best_f1),
+                                             'run':FLAGS.run})
+        outname=FLAGS.outname
+        if not outname:
+            outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
+                      (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
+                       FLAGS.normalize,FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
+        wv.pickle(FLAGS.outdir, outname)
+        print 'Weighted vectors saved at '+outname
 
-            train_classifiers(devel_x_weighted, devel_y, test_x_weighted, test_y, fout)
+
+
 
 #-------------------------------------
 if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_integer('fs', None, 'Indicates the number of features to be selected (default None --all).')
+    flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
-    flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
+    flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
-    flags.DEFINE_string('optimizer', 'sgd', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default sgd)')
+    flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
     flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
@@ -305,29 +330,20 @@ if __name__ == '__main__':
                                             '\n img: save images in pdf format'
                                             '\n vid: generates a video showing the evolution by steps')
     flags.DEFINE_string('plotdir', '../plot', 'Directory for plots, if --plot is True (default "../plot")')
+    flags.DEFINE_string('outdir', '../vectors', 'Output dir for learned vectors (default "../vectors").')
+    flags.DEFINE_string('outname', None, 'Output file name for learned vectors (default None --self defined with the rest of parameters).')
+    flags.DEFINE_integer('run', 0, 'Specifies the number of run in case an experiment is to be replied more than once (default 0)')
+    flags.DEFINE_string('notes', '', 'Informative notes to be stored within the pickle output file.')
+    flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
+    flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
-    err_param_range('optimizer', FLAGS.optimizer, ['sgd','adam', 'rmsprop'])
+    err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
-    err_param_range('plotmode',  FLAGS.plotmode, ['off', 'show', 'img', 'vid'])
+    err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     if FLAGS.plotmode != 'show':
-        os.environ['MATPLOTLIB_USE'] = 'Agg' #ps
+        os.environ['MATPLOTLIB_USE'] = 'Agg'
     from plot_function import PlotIdf
     tf.app.run()
-
-    # run data fields:
-    # classifier: linearsvm, random forest, etc.
-    # cross-val parameter tunning: C=...
-    # num_features: 10000
-    # doc vectors: count, binary, tf, tfidf, bm25, hashing, learnt
-    # dataset: 20newsgroup, rvc1, ...
-    # category: 0, 1, 2, ...
-    # batchsize: 32, 64, ...
-    # hidden: 100, 1000
-    # lrate: 0.005
-    # optimizer: sgd, adam, rmsprop
-    # normalize: true or false
-    # pretrain: none, ig, chi2, gss
-    #

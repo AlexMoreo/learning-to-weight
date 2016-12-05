@@ -3,6 +3,7 @@ import tensorflow as tf
 import signal
 import math, random
 import shutil
+from sklearn.metrics import *
 
 #--------------------------------------------------------------
 # Model helpers
@@ -132,6 +133,17 @@ def count_trainable_parameters():
 def tee(outstring, fout):
     print outstring
     fout.write(outstring + '\n')
+
+def evaluation_metrics(predictions, true_labels):
+    acc = accuracy_score(true_labels, predictions)
+    f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
+    p = precision_score(true_labels, predictions, average='binary', pos_label=1)
+    r = recall_score(true_labels, predictions, average='binary', pos_label=1)
+    return acc, f1, p, r
+
+def contingency_table(predictions, true_labels):
+    t = confusion_matrix(true_labels, predictions)
+    return {'tp':t[1, 1], 'tn':t[0, 0], 'fn':t[1,0], 'fp':t[0,1]}
 
 
 

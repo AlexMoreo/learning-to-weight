@@ -1,17 +1,14 @@
+import sys
+import argparse
 from sklearn import svm
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
-import time
-from time import gmtime, strftime
 from corpus_20newsgroup import *
-from sklearn.metrics import *
-from sklearn.preprocessing import normalize
-import sys
-import pandas as pd
 from weighted_vectors import WeightedVectors
+from result_table import ReusltTable
 
 def linear_svm(data, results):
     param_c = [1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3]
@@ -56,8 +53,6 @@ def linear_svm(data, results):
         results.set('notes', '<not applicable>')
 
     results.commit()
-
-
 
 def random_forest(data, results):
     param_n_estimators = [10, 25, 50, 100]
@@ -143,105 +138,51 @@ def multinomial_nb(data, results):
         results.set('notes', '<not applicable>')
     results.commit()
 
-
-def evaluation_metrics(predictions, true_labels):
-    acc = accuracy_score(true_labels, predictions)
-    f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
-    p = precision_score(true_labels, predictions, average='binary', pos_label=1)
-    r = recall_score(true_labels, predictions, average='binary', pos_label=1)
-    return acc, f1, p, r
-
-def contingency_table(predictions, true_labels):
-    t = confusion_matrix(true_labels, predictions)
-    return {'tp':t[1, 1], 'tn':t[0, 0], 'fn':t[1,0], 'fp':t[0,1]}
-
-class ReusltTable:
-    def __init__(self, result_container):
-        self.result_container = result_container
-
-        if os.path.exists(result_container):
-            self.df = pd.read_csv(result_container)
-        else:
-            self.df = pd.DataFrame(columns=['classifier',  # linearsvm, random forest, Multinomial NB,
-                                       'vectorizer',  # binary, count, tf, tfidf, tfidf sublinear, bm25, hashing, learnt
-                                       'num_features',
-                                       'dataset',  # 20newsgroup, rcv1, ...
-                                       'category',
-                                       'run',
-                                       'date',
-                                       'time',
-                                       'elapsedtime',
-                                       'hiddensize',
-                                       'lrate',
-                                       'optimizer',
-                                       'normalize',
-                                       'nonnegative',
-                                       'pretrain',
-                                       'iterations',
-                                       'notes',
-                                       'acc', 'fscore', 'precision', 'recall', 'tp', 'fp', 'fn', 'tn'])
-
-    def add_empty_entry(self):
-        self.df.loc[len(self.df)] = [np.nan] * len(self.df.columns)
-
-    def set(self, column, value):
-        self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)] = value
-
-    def set_all(self, dictionary):
-        for key,value in dictionary.items():
-            self.set(key,value)
-
-    def commit(self):
-        self.df.to_csv(self.result_container, index=False)
-
-    def init_row_result(self, classifier_name, data, run=0):
-        self.add_empty_entry()
-        self.set('classifier', classifier_name)
-        self.set('vectorizer', data.vectorize)
-        self.set('num_features', data.num_features())
-        self.set('dataset', data.name)
-        self.set('category', data.positive_cat)
-        self.set('run', run)
-
-    def add_result_metric_scores(self, acc, f1, prec, rec, cont_table, init_time, notes=''):
-        self.set('notes', notes)
-        self.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-        self.set_all(cont_table)
-        self.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})
+def run_benchmark(data, results, benchmarks):
+    if benchmarks['linearsvm']:
+        linear_svm(data, results)
+    if benchmarks['multinomialnb']:
+        multinomial_nb(data, results)
+    if benchmarks['randomforest']:
+        random_forest(data, results)
 
 if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
-    #TODO parse params (num categories, feat sel, vectorizer (count, tf, tfidf, tfidf sublinear, bm25, hashing, binary, tf ig, tf others...), methods, read-from-model)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-b", "--runbaselines", help="indicates whether or not to run the benchmark on the baselines", default=False, action="store_true")
+    parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
+    parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
+    parser.add_argument("--no-linearsvm", help="adds/removes the linearsvm classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-multinomialnb", help="adds/removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-randomforest", help="adds/removes the randomforest classifier from the benchmark", default=False, action="store_true")
+    args = parser.parse_args()
 
-    result_container = '../results.csv'
-    results = ReusltTable(result_container)
+    benchmarks = dict({'linearsvm': not args.no_linearsvm,
+                       'multinomialnb': not args.no_multinomialnb,
+                       'randomforest': not args.no_randomforest})
 
+    print "Loading result file from "+args.resultfile
+    results = ReusltTable(args.resultfile)
 
+    if args.runbaselines:
+        print "Runing classification benchmark on baselines"
+        print "Dataset: 20Newsgroup"
+        num_cats = 20
+        feat_sel = 10000
+        for vectorizer in ['hashing', 'binary', 'count', 'tfidf', 'sublinear_tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
+            for pos_cat_code in range(num_cats):
+                print('Category %d (%s)' % (pos_cat_code, vectorizer))
+                data = Dataset(vectorize=vectorizer, delete_metadata=True, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
+                run_benchmark(data, results, benchmarks)
+    if args.vectordir:
+        print "Runing classification benchmark on learnt vectors in " + args.vectordir
+        for vecname in [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]:
+            print "Vector file: " + vecname
+            data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
+            run_benchmark(data, results, benchmarks)
 
-    vecdir = '../vectors'
-    vecname = '20n_C0_F5000_H1000_lr0.00500_Oadam_NTrue_nTrue_Poff_R0.pickle'
-    data = WeightedVectors.unpickle(indir=vecdir, infile_name=vecname)
-    linear_svm(data, results)
-    results.commit()
-    sys.exit()
-
-    num_cats = 20
-
-    for vectorizer in ['hashing', 'binary','count','tfidf','sublinear_tfidf']:
-        for pos_cat_code in range(num_cats):
-            print('Category %d (%s)' % (pos_cat_code, vectorizer))
-
-
-            feat_sel = 10000
-            categories = None #['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-            data = Dataset(categories=categories, vectorize=vectorizer, delete_metadata=True, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
-
-            linear_svm(data, results)
-            multinomial_nb(data, results)
-            random_forest(data, results)
-
-    print results.df
+    print "Done."
     results.commit()
 
 

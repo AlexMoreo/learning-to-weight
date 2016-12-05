@@ -191,9 +191,6 @@ class Dataset:
     def num_categories(self):
         return len(np.unique(self.devel.target))
 
-    def get_ategories(self):
-        return np.unique(self.devel.target_names)
-
     def num_features(self):
         return self.devel_vec.shape[1]
 
@@ -205,4 +202,7 @@ class Dataset:
 
     def num_test_documents(self):
         return len(self.test_indexes)
+
+    def get_categories(self):
+        return np.unique(self.test.target_names)
 
