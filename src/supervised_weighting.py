@@ -209,7 +209,8 @@ def main(argv=None):
         best_f1 = 0.0
         log_steps = 0
         for step in range(1,FLAGS.maxsteps):
-            optimizer_ = end2end_optimizer if (FLAGS.pretrain=='off' or step > logistic_optimization_phase) else logistic_optimizer
+            in_ogistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
+            optimizer_ = logistic_optimizer if in_ogistic_phase else end2end_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
@@ -218,7 +219,7 @@ def main(argv=None):
             if step % show_step == 0:
                 sum = end2end_summaries.eval(feed_dict=tr_dict)
                 tensorboard.add_train_summary(sum, step+idf_steps)
-                tr_phase = 'logistic' if step < logistic_optimization_phase else 'end2end'
+                tr_phase = 'logistic' if in_ogistic_phase else 'end2end'
                 print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
                 l_ave = 0.0
 
