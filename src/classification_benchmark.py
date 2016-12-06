@@ -35,6 +35,8 @@ def linear_svm(data, results):
                         print 'Param configuration not supported, skip'
 
     results.init_row_result('LinearSVM', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -57,7 +59,7 @@ def linear_svm(data, results):
 def random_forest(data, results):
     param_n_estimators = [10, 25, 50, 100]
     param_criterion = ['gini', 'entropy']
-    param_max_features = ['auto', 'sqrt', 'log2', None]
+    param_max_features = ['sqrt', 'log2', 1000, None]
     param_class_weight = ['balanced', 'balanced_subsample', None]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
@@ -81,6 +83,8 @@ def random_forest(data, results):
                         print 'Param configuration not supported, skip'
 
     results.init_row_result('RandomForest', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -104,7 +108,7 @@ def random_forest(data, results):
     results.commit()
 
 def multinomial_nb(data, results):
-    param_alpha = [1.0, .1, .01, .001, 0.0]
+    param_alpha = [1.0, .1, .05, .01, .001, 0.0]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
     best_f1 = None
@@ -122,6 +126,8 @@ def multinomial_nb(data, results):
             print 'Param configuration not supported, skip'
 
     results.init_row_result('MultinomialNB', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
 
     if best_f1:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
@@ -170,7 +176,7 @@ if __name__ == '__main__':
         print "Dataset: 20Newsgroup"
         num_cats = 20
         feat_sel = 10000
-        for vectorizer in ['hashing', 'binary', 'count', 'tfidf', 'sublinear_tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
+        for vectorizer in ['sublinear_tfidf', 'hashing', 'binary', 'count', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
             for pos_cat_code in range(num_cats):
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = Dataset(vectorize=vectorizer, delete_metadata=True, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
