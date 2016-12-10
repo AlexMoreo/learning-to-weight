@@ -6,7 +6,7 @@ from pprint import pprint
 import time
 from time import gmtime, strftime
 import feature_selection_function
-from corpus_20newsgroup import *
+from dataset_loader import *
 from sklearn.metrics import *
 from sklearn.preprocessing import normalize
 import sys
@@ -45,9 +45,9 @@ def main(argv=None):
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
-    feat_corr_info = np.concatenate([[sup_i.tpr(), sup_i.fpr()] for sup_i in sup])
+    feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
     #feat_corr_info = np.concatenate([[sup_i.p_tp(), sup_i.p_fp(), sup_i.p_fn(), sup_i.p_tn()] for sup_i in sup])
-    info_by_feat = len(feat_corr_info) / data.num_features()
+    info_by_feat = len(feat_corr_info[0])
 
     x_size = data.num_features()
     batch_size = FLAGS.batchsize
@@ -61,7 +61,7 @@ def main(argv=None):
         y = tf.placeholder(tf.float32, shape=[None])
         keep_p = tf.placeholder(tf.float32)
 
-        feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
+        feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
             tf_param = tf.Variable(tf.ones([1]), tf.float32)
@@ -173,9 +173,11 @@ def main(argv=None):
         epsilon = 0.0003
         def idf_wrapper(x):
             return idf_prediction.eval(feed_dict={x_func: [x], keep_p: 1.0})
-        plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir, supervised_idf, idf_wrapper)
+        plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir,
+                       supervised_idf if FLAGS.pretrain!='off' else None, idf_wrapper, plotpoints=feat_corr_info)
         plotsteps = 100
         if FLAGS.pretrain != 'off':
+            if FLAGS.plotmode in ['img', 'show']: plot.plot(step=0)
             l_ave = 0.0
             show_step = 1000
             for step in range(1, 40001):
@@ -266,12 +268,25 @@ def main(argv=None):
         acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
         print('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
 
+        run_params_dic = {'num_features': data.num_features(),
+                          'date': strftime("%d-%m-%Y", gmtime()),
+                          'hiddensize': FLAGS.hidden,
+                          'lrate': FLAGS.lrate,
+                          'optimizer': FLAGS.optimizer,
+                          'normalize': FLAGS.normalize,
+                          'nonnegative': FLAGS.forcepos,
+                          'pretrain': FLAGS.pretrain,
+                          'iterations': idf_steps + log_steps,
+                          'notes': FLAGS.notes + ('(val_f1%.4f)' % best_f1),
+                          'run': FLAGS.run}
+
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
             results = ReusltTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
+            results.set_all(run_params_dic)
             results.commit()
 
         print 'Weighting documents'
@@ -285,17 +300,7 @@ def main(argv=None):
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
-                             run_params_dic={'num_features':data.num_features(),
-                                             'date':strftime("%d-%m-%Y", gmtime()),
-                                             'hiddensize':FLAGS.hidden,
-                                             'lrate':FLAGS.lrate,
-                                             'optimizer':FLAGS.optimizer,
-                                             'normalize':FLAGS.normalize,
-                                             'nonnegative':FLAGS.forcepos,
-                                             'pretrain':FLAGS.pretrain,
-                                             'iterations':idf_steps+log_steps,
-                                             'notes':FLAGS.notes+('(val_f1%.4f)'%best_f1),
-                                             'run':FLAGS.run})
+                             run_params_dic=run_params_dic)
         outname=FLAGS.outname
         if not outname:
             outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
@@ -324,7 +329,6 @@ if __name__ == '__main__':
     flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
-    #plot parameters
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
                                             '\n show: shows the plot during training'

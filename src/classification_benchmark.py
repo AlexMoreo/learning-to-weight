@@ -6,9 +6,11 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
-from corpus_20newsgroup import *
+from dataset_loader import *
 from weighted_vectors import WeightedVectors
 from result_table import ReusltTable
+
+#TODO: improve with GridSearchCV or RandomizedSearchCV
 
 def linear_svm(data, results):
     param_c = [1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3]
@@ -28,7 +30,7 @@ def linear_svm(data, results):
                         vaY_ = svm_.predict(vaX)
                         _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
                         print 'Train SVM (c=%.3f, loss=%s, dual=%s, tol=%f) got f-score=%f' % (c, l, d, tol, f1)
-                        if not best_f1 or f1 > best_f1:
+                        if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'C':c, 'loss':l, 'dual':d, 'tol':tol}
                     except ValueError:
@@ -38,14 +40,14 @@ def linear_svm(data, results):
     if isinstance(data, WeightedVectors):
         results.set_all(data.get_learning_parameters())
 
-    if best_f1:
+    if best_f1 is not None:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual'], tol=best_params['tol']).fit(deX, deY)
         teY_ = svm_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
@@ -76,7 +78,7 @@ def random_forest(data, results):
                         _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
                         print 'Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
                               (n_estimators, criterion, max_features, class_weight, f1)
-                        if not best_f1 or f1 > best_f1:
+                        if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'n_estimators':n_estimators, 'criterion':criterion, 'max_features':max_features, 'class_weight':class_weight}
                     except ValueError:
@@ -86,7 +88,7 @@ def random_forest(data, results):
     if isinstance(data, WeightedVectors):
         results.set_all(data.get_learning_parameters())
 
-    if best_f1:
+    if best_f1 is not None:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
@@ -119,7 +121,7 @@ def multinomial_nb(data, results):
             vaY_ = nb_.predict(vaX)
             _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
             print 'Train Multinomial (alpha=%.3f) got f-score=%f' % (alpha, f1)
-            if not best_f1 or f1 > best_f1:
+            if best_f1 is None or f1 > best_f1:
                 best_f1 = f1
                 best_params = {'alpha': alpha}
         except ValueError:
@@ -129,7 +131,7 @@ def multinomial_nb(data, results):
     if isinstance(data, WeightedVectors):
         results.set_all(data.get_learning_parameters())
 
-    if best_f1:
+    if best_f1 is not None:
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
@@ -156,6 +158,7 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroup', 'reuters21578'])
     parser.add_argument("-b", "--runbaselines", help="indicates whether or not to run the benchmark on the baselines", default=False, action="store_true")
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
@@ -173,13 +176,19 @@ if __name__ == '__main__':
 
     if args.runbaselines:
         print "Runing classification benchmark on baselines"
-        print "Dataset: 20Newsgroup"
-        num_cats = 20
+        print "Dataset: " + args.dataset
+        if args.dataset == '20newsgroup':
+            num_cats = 20
+        elif args.dataset == 'reuters21578':
+            num_cats = 115
         feat_sel = 10000
         for vectorizer in ['sublinear_tfidf', 'hashing', 'binary', 'count', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
             for pos_cat_code in range(num_cats):
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
-                data = Dataset(vectorize=vectorizer, delete_metadata=True, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
+                data = Dataset(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
+                print("|Tr|=%d (val=%d)" % (data.num_devel_docs(), data.num_val_documents()))
+                print("|Te|=%d" % data.num_test_documents())
+
                 run_benchmark(data, results, benchmarks)
     if args.vectordir:
         print "Runing classification benchmark on learnt vectors in " + args.vectordir

@@ -1,4 +1,5 @@
 from sklearn.datasets import fetch_20newsgroups
+from reuters21578_fetch import fetch_reuters21579
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
@@ -11,15 +12,24 @@ from sklearn.feature_selection import chi2
 from feature_selection_function import ContTable
 
 class Dataset:
-    def __init__(self, valid_proportion=0.1, categories=None, vectorize='hashing', delete_metadata=True, rep_mode='sparse', positive_cat=None, feat_sel=None):
+    def __init__(self, dataset, valid_proportion=0.1, categories=None, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf'])
         err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
-        self.name = '20newsgroups'
+        err_param_range('dataset', dataset, valid_values=['20newsgroup', 'reuters21578'])
+        self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
-        metadata = ('headers', 'footers', 'quotes') if delete_metadata else None
-        self.devel = fetch_20newsgroups(subset='train', categories=categories, remove=metadata)
-        self.test  = fetch_20newsgroups(subset='test',  categories=categories, remove=metadata)
+        if dataset == '20newsgroup':
+            metadata = ('headers', 'footers', 'quotes')
+            self.devel = fetch_20newsgroups(subset='train', categories=categories, remove=metadata)
+            self.test  = fetch_20newsgroups(subset='test',  categories=categories, remove=metadata)
+            self.classification = 'single-label'
+        else: #'reuters21579'
+            self.devel = fetch_reuters21579(subset='train')
+            self.test  = fetch_reuters21579(subset='test')
+            self.classification = 'multi-label'
+        err_exit(positive_cat is not None and positive_cat not in range(len(self.devel.target_names)),
+                 'Error. Positive category not in scope.')
         self.epoch = 0
         self.offset = 0
         self.positive_cat = positive_cat
@@ -41,7 +51,7 @@ class Dataset:
             self._batch_getter = self._sparse_index_batch_getter
         if self.positive_cat is not None:
             pos_cat_name = self.devel.target_names[self.positive_cat]
-            err_exit(pos_cat_name not in self.devel.target_names, 'Error. Positive category not in scope.')
+            print('Binarize towards positive category %s' % pos_cat_name)
             self.binarize_classes()
             self.feature_selection(feat_sel)
         self.cat_vec_dic = dict()
@@ -50,12 +60,18 @@ class Dataset:
     def binarize_classes(self):
         #pos_cat_code = self.devel.target_names.index(self.positive_cat)
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
-        def __binarize_codes(target, pos_code):
+        def __binarize_codes_single_label(target, pos_code):
             target[target == pos_code] = -1
             target[target != -1] = 0
             target[target == -1] = 1
-        __binarize_codes(self.devel.target, self.positive_cat)
-        __binarize_codes(self.test.target,  self.positive_cat)
+        def __binarize_codes_multi_label(target, pos_code):
+            return np.array([(1 if pos_code in labels else 0) for labels in target])
+        if self.classification == 'single-label':
+            __binarize_codes_single_label(self.devel.target, self.positive_cat)
+            __binarize_codes_single_label(self.test.target,  self.positive_cat)
+        elif self.classification == 'multi-label':
+            self.devel.target = __binarize_codes_multi_label(self.devel.target, self.positive_cat)
+            self.test.target = __binarize_codes_multi_label(self.test.target, self.positive_cat)
 
     def feature_selection(self, feat_sel):
         if self.vectorize == 'hashing':
@@ -94,8 +110,8 @@ class Dataset:
         test_vec.sort_indices()
         return devel_vec, test_vec
 
-    def is_weighted(self):
-        return self.vectorize in ['tfidf', 'count']
+    #def is_weighted(self):
+    #    return self.vectorize in ['tfidf', 'count']
 
     #virtually remove invalid documents (documents without any non-zero feature)
     def _get_doc_indexes(self, vector_set):
@@ -204,5 +220,5 @@ class Dataset:
         return len(self.test_indexes)
 
     def get_categories(self):
-        return np.unique(self.test.target_names)
+        return np.unique(self.devel.target_names)
 

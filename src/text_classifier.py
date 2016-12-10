@@ -4,7 +4,7 @@ from helpers import *
 from helpers import *
 from pprint import pprint
 import time
-from corpus_20newsgroup import Dataset
+from dataset_loader import Dataset
 from sklearn.metrics import f1_score
 
 #TODO: clustering and two losses
