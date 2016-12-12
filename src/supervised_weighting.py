@@ -30,7 +30,7 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
     categories = None if not FLAGS.debug else ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    data = Dataset(categories=categories, vectorize='count', delete_metadata=True, rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = Dataset(dataset='20newsgroups', vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
 
     if data.vectorize=='count':
         print('L1-normalize')
