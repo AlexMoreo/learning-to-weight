@@ -158,7 +158,7 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroup', 'reuters21578'])
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroups', 'reuters21578'])
     parser.add_argument("-b", "--runbaselines", help="indicates whether or not to run the benchmark on the baselines", default=False, action="store_true")
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
@@ -177,12 +177,12 @@ if __name__ == '__main__':
     if args.runbaselines:
         print "Runing classification benchmark on baselines"
         print "Dataset: " + args.dataset
-        if args.dataset == '20newsgroup':
+        if args.dataset == '20newsgroups':
             num_cats = 20
         elif args.dataset == 'reuters21578':
             num_cats = 115
         feat_sel = 10000
-        for vectorizer in ['sublinear_tfidf', 'hashing', 'binary', 'count', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
+        for vectorizer in ['count', 'sublinear_tfidf', 'hashing', 'binary', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
             for pos_cat_code in range(num_cats):
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = Dataset(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)

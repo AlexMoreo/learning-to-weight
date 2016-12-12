@@ -1,22 +1,16 @@
-# Authors: Eustache Diemert <eustache@diemert.fr>
+# Modified version of the code originally implemented by Eustache Diemert <eustache@diemert.fr>
 #          @FedericoV <https://github.com/FedericoV/>
-# License: BSD 3 clause
+# with License: BSD 3 clause
 
 from __future__ import print_function
 
 import sys
 from glob import glob
-import itertools
 import os.path
 import re
 import tarfile
-import time
-import cPickle as pickle
 from helpers import *
 
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
 
 from sklearn.externals.six.moves import html_parser
 from sklearn.externals.six.moves import urllib
@@ -38,6 +32,7 @@ class ReutersParser(html_parser.HTMLParser):
         html_parser.HTMLParser.__init__(self)
         self._reset()
         self.encoding = encoding
+        self.empty_docs = 0
 
     def handle_starttag(self, tag, attrs):
         method = 'start_' + tag
@@ -52,10 +47,12 @@ class ReutersParser(html_parser.HTMLParser):
         self.in_body = 0
         self.in_topics = 0
         self.in_topic_d = 0
+        self.in_unproc_text = 0
         self.title = ""
         self.body = ""
         self.topics = []
         self.topic_d = ""
+        self.text = ""
 
     def parse(self, fd):
         for chunk in fd:
@@ -69,6 +66,8 @@ class ReutersParser(html_parser.HTMLParser):
             self.title += data
         elif self.in_topic_d:
             self.topic_d += data
+        elif self.in_unproc_text:
+            self.text += data
 
     def start_reuters(self, attributes):
         topic_attr = attributes[0][1]
@@ -84,7 +83,9 @@ class ReutersParser(html_parser.HTMLParser):
     def end_reuters(self):
         self.body = re.sub(r'\s+', r' ', self.body)
         if self.lewissplit != u'unused':
-            parsed_doc = {'title': self.title, 'body': self.body, 'topics': self.topics}
+            parsed_doc = {'title': self.title, 'body': self.body, 'unproc':self.text, 'topics': self.topics}
+            if (self.title+self.body+self.text).strip() == '':
+                self.empty_docs += 1
             if self.lewissplit == u'train':
                 self.tr_docs.append(parsed_doc)
             elif self.lewissplit == u'test':
@@ -109,6 +110,13 @@ class ReutersParser(html_parser.HTMLParser):
     def end_topics(self):
         self.in_topics = 0
 
+    def start_text(self, attributes):
+        if len(attributes)>0 and attributes[0][1] == u'UNPROC':
+            self.in_unproc_text = 1
+
+    def end_text(self):
+        self.in_unproc_text = 0
+
     def start_d(self, attributes):
         self.in_topic_d = 1
 
@@ -119,16 +127,6 @@ class ReutersParser(html_parser.HTMLParser):
         self.topic_d = ""
 
     def download_if_not_exist(self):
-        """Iterate over documents of the Reuters dataset.
-
-            The Reuters archive will automatically be downloaded and uncompressed if
-            the `data_path` directory does not exist.
-
-            Documents are represented as dictionaries with 'body' (str),
-            'title' (str), 'topics' (list(str)) keys.
-
-            """
-
         DOWNLOAD_URL = ('http://archive.ics.uci.edu/ml/machine-learning-databases/'
                         'reuters21578-mld/reuters21578.tar.gz')
         ARCHIVE_FILENAME = 'reuters21578.tar.gz'
@@ -155,37 +153,3 @@ class ReutersParser(html_parser.HTMLParser):
             print("untarring Reuters dataset...")
             tarfile.open(archive_path, 'r:gz').extractall(self.data_path)
             print("done.")
-
-class Reuters21579:
-    def __init__(self, data, target, target_names):
-        self.data = data
-        self.target = target
-        self.target_names = target_names
-
-def fetch_reuters21579(data_path=None, subset='train'):
-    err_param_range('subset', subset, ['train', 'test'])
-    if data_path is None:
-        data_path = os.path.join(get_data_home(), 'reuters')
-    reuters_pickle_path = os.path.join(data_path, "reuters."+subset+".pickle")
-    if not os.path.exists(reuters_pickle_path):
-        parser = ReutersParser()
-        for filename in glob(os.path.join(data_path, "*.sgm")):
-            parser.parse(open(filename, 'rb'))
-        # index category names with a unique numerical code (only considering categories with training examples)
-        tr_categories = np.unique(np.concatenate([doc['topics'] for doc in parser.tr_docs])).tolist()
-        def pickle_documents(docs, subset):
-            for doc in docs:
-                doc['topics'] = [tr_categories.index(t) for t in doc['topics'] if t in tr_categories]
-            pickle_docs = {'categories': tr_categories, 'documents': docs}
-            pickle.dump(pickle_docs, open(os.path.join(data_path, "reuters."+subset+".pickle"), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-            return pickle_docs
-        pickle_tr = pickle_documents(parser.tr_docs, "train")
-        pickle_te = pickle_documents(parser.te_docs, "test")
-        requested_subset = pickle_tr if subset=='train' else pickle_te
-    else:
-        requested_subset = pickle.load(open(reuters_pickle_path, 'rb'))
-
-    data = [(u'{title}\n{body}'.format(**doc), doc['topics']) for doc in requested_subset['documents']]
-    text_data, topics = zip(*data)
-    return Reuters21579(data=text_data, target=topics, target_names=requested_subset['categories'])
-

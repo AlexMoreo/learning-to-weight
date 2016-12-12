@@ -1,5 +1,6 @@
 from sklearn.datasets import fetch_20newsgroups
-from reuters21578_fetch import fetch_reuters21579
+from reuters21578_parser import ReutersParser
+from sklearn.datasets import get_data_home
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
@@ -10,23 +11,24 @@ import time
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 from feature_selection_function import ContTable
+from glob import glob
+import cPickle as pickle
 
 class Dataset:
-    def __init__(self, dataset, valid_proportion=0.1, categories=None, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
+    def __init__(self, dataset, valid_proportion=0.1, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf'])
         err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
-        err_param_range('dataset', dataset, valid_values=['20newsgroup', 'reuters21578'])
+        err_param_range('dataset', dataset, valid_values=['20newsgroups', 'reuters21578'])
         self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
-        if dataset == '20newsgroup':
-            metadata = ('headers', 'footers', 'quotes')
-            self.devel = fetch_20newsgroups(subset='train', categories=categories, remove=metadata)
-            self.test  = fetch_20newsgroups(subset='test',  categories=categories, remove=metadata)
+        if dataset == '20newsgroups':
+            self.devel = self.fetch_20newsgroups(subset='train')
+            self.test  = self.fetch_20newsgroups(subset='test')
             self.classification = 'single-label'
         else: #'reuters21579'
-            self.devel = fetch_reuters21579(subset='train')
-            self.test  = fetch_reuters21579(subset='test')
+            self.devel = self.fetch_reuters21579(subset='train')
+            self.test  = self.fetch_reuters21579(subset='test')
             self.classification = 'multi-label'
         err_exit(positive_cat is not None and positive_cat not in range(len(self.devel.target_names)),
                  'Error. Positive category not in scope.')
@@ -221,4 +223,57 @@ class Dataset:
 
     def get_categories(self):
         return np.unique(self.devel.target_names)
+
+    def fetch_20newsgroups(self, data_path=None, subset='train'):
+        err_param_range('subset', subset, ['train', 'test'])
+        if data_path is None:
+            data_path = os.path.join(get_data_home(), '20newsgroups')
+            create_if_not_exists(data_path)
+        _20news_pickle_path = os.path.join(data_path, "20newsgroups." + subset + ".pickle")
+        if not os.path.exists(_20news_pickle_path):
+            metadata = ('headers', 'footers', 'quotes')
+            dataset = fetch_20newsgroups(subset=subset, remove=metadata)
+            pickle.dump(dataset, open(_20news_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        else:
+            dataset = pickle.load(open(_20news_pickle_path, 'rb'))
+        return dataset
+
+
+    def fetch_reuters21579(self, data_path=None, subset='train'):
+        class Reuters21579:
+            def __init__(self, data, target, target_names):
+                self.data = data
+                self.target = target
+                self.target_names = target_names
+
+        err_param_range('subset', subset, ['train', 'test'])
+        if data_path is None:
+            data_path = os.path.join(get_data_home(), 'reuters')
+        reuters_pickle_path = os.path.join(data_path, "reuters." + subset + ".pickle")
+        if not os.path.exists(reuters_pickle_path):
+            parser = ReutersParser()
+            for filename in glob(os.path.join(data_path, "*.sgm")):
+                parser.parse(open(filename, 'rb'))
+            # index category names with a unique numerical code (only considering categories with training examples)
+            tr_categories = np.unique(np.concatenate([doc['topics'] for doc in parser.tr_docs])).tolist()
+
+            def pickle_documents(docs, subset):
+                for doc in docs:
+                    doc['topics'] = [tr_categories.index(t) for t in doc['topics'] if t in tr_categories]
+                pickle_docs = {'categories': tr_categories, 'documents': docs}
+                pickle.dump(pickle_docs, open(os.path.join(data_path, "reuters." + subset + ".pickle"), 'wb'),
+                            protocol=pickle.HIGHEST_PROTOCOL)
+                return pickle_docs
+
+            pickle_tr = pickle_documents(parser.tr_docs, "train")
+            pickle_te = pickle_documents(parser.te_docs, "test")
+            print('Empty docs %d' % parser.empty_docs)
+            requested_subset = pickle_tr if subset == 'train' else pickle_te
+        else:
+            requested_subset = pickle.load(open(reuters_pickle_path, 'rb'))
+
+        data = [(u'{title}\n{body}\n{unproc}'.format(**doc), doc['topics']) for doc in requested_subset['documents']]
+        text_data, topics = zip(*data)
+        return Reuters21579(data=text_data, target=topics, target_names=requested_subset['categories'])
+
 
