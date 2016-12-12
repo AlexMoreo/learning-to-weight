@@ -89,6 +89,9 @@ class Dataset:
     def class_prevalence(self, cat_label=1):
         return sum(1.0 for x in self.devel.target if x == cat_label) / self.num_tr_documents()
 
+    def test_class_prevalence(self, cat_label=1):
+        return sum(1.0 for x in self.test.target if x == cat_label) / self.num_test_documents()
+
     def _vectorize_documents(self, vectorize):
         if vectorize == 'hashing':
             vectorizer = HashingVectorizer(n_features=10000, stop_words='english')

@@ -126,6 +126,8 @@ def multinomial_nb(data, results):
                 best_params = {'alpha': alpha}
         except ValueError:
             print 'Param configuration not supported, skip'
+        except IndexError:
+            print 'Param configuration produced index error, skip'
 
     results.init_row_result('MultinomialNB', data)
     if isinstance(data, WeightedVectors):
@@ -186,8 +188,9 @@ if __name__ == '__main__':
             for pos_cat_code in range(num_cats):
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = Dataset(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
-                print("|Tr|=%d (val=%d)" % (data.num_devel_docs(), data.num_val_documents()))
-                print("|Te|=%d" % data.num_test_documents())
+                print("|Tr|=%d (val=%d) [prev+ %f]" % (data.num_devel_docs(), data.num_val_documents(), data.class_prevalence()))
+                print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
+
 
                 run_benchmark(data, results, benchmarks)
     if args.vectordir:
