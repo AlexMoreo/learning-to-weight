@@ -135,6 +135,8 @@ def tee(outstring, fout):
     fout.write(outstring + '\n')
 
 def evaluation_metrics(predictions, true_labels):
+    if sum(true_labels)==0 and sum(predictions == 0):
+        return 1.0, 1.0, 1.0, 1.0
     acc = accuracy_score(true_labels, predictions)
     f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
     p = precision_score(true_labels, predictions, average='binary', pos_label=1)
