@@ -29,8 +29,7 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
-    categories = None if not FLAGS.debug else ['alt.atheism', 'talk.religion.misc', 'comp.graphics', 'sci.space']
-    data = Dataset(dataset='20newsgroups', vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = Dataset(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
 
     if data.vectorize=='count':
         print('L1-normalize')
@@ -317,6 +316,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
+    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in ["20newsgroups", "reuters21578"] (default 20newsgroups)')
     flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
@@ -342,6 +342,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
+    err_param_range('dataset', FLAGS.optimizer, ['20newsgroups', 'reuters21578'])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
