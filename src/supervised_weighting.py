@@ -342,7 +342,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
-    err_param_range('dataset', FLAGS.optimizer, ['20newsgroups', 'reuters21578'])
+    err_param_range('dataset', FLAGS.dataset, ['20newsgroups', 'reuters21578'])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
