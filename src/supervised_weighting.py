@@ -282,6 +282,7 @@ def main(argv=None):
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
             results = ReusltTable(FLAGS.resultcontainer)
+            data.vectorize='learned'
             results.init_row_result('LogisticRegression', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
