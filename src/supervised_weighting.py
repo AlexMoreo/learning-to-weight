@@ -29,7 +29,7 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
-    data = Dataset(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
 
     if data.vectorize=='count':
         print('L1-normalize')

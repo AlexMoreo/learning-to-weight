@@ -1,24 +1,31 @@
 from sklearn.datasets import fetch_20newsgroups
 from reuters21578_parser import ReutersParser
+from nltk.corpus import movie_reviews
+import nltk
 from sklearn.datasets import get_data_home
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.utils import shuffle
 from helpers import *
 import numpy as np
-import time
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
 from feature_selection_function import ContTable
 from glob import glob
 import cPickle as pickle
+from random import shuffle
 
 class Dataset:
+    def __init__(self, data, target, target_names):
+        self.data = data
+        self.target = target
+        self.target_names = target_names
+
+class DatasetLoader:
     def __init__(self, dataset, valid_proportion=0.1, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf'])
         err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
-        err_param_range('dataset', dataset, valid_values=['20newsgroups', 'reuters21578'])
+        err_param_range('dataset', dataset, valid_values=['20newsgroups', 'reuters21578', 'movie_reviews'])
         self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
@@ -26,10 +33,14 @@ class Dataset:
             self.devel = self.fetch_20newsgroups(subset='train')
             self.test  = self.fetch_20newsgroups(subset='test')
             self.classification = 'single-label'
-        else: #'reuters21579'
+        elif dataset == 'reuters21578':
             self.devel = self.fetch_reuters21579(subset='train')
             self.test  = self.fetch_reuters21579(subset='test')
             self.classification = 'multi-label'
+        else: #movie_reviews
+            self.devel = self.fetch_movie_reviews(subset='train')
+            self.test = self.fetch_movie_reviews(subset='test')
+            self.classification = 'single-label'
         err_exit(positive_cat is not None and positive_cat not in range(len(self.devel.target_names)),
                  'Error. Positive category not in scope.')
         self.epoch = 0
@@ -86,11 +97,20 @@ class Dataset:
             self.test_vec = fs.transform(self.test_vec)
             print('Done')
 
-    def class_prevalence(self, cat_label=1):
-        return sum(1.0 for x in self.devel.target if x == cat_label) / self.num_tr_documents()
+    def __prevalence(self, inset, cat_label=1):
+        return sum(1.0 for x in inset if x == cat_label) / len(inset)
+
+    def devel_class_prevalence(self, cat_label=1):
+        return self.__prevalence(self.devel.target[self.devel_indexes], cat_label)
+
+    def train_class_prevalence(self, cat_label=1):
+        return self.__prevalence(self.devel.target[self.train_indexes], cat_label)
+
+    def valid_class_prevalence(self, cat_label=1):
+        return self.__prevalence(self.devel.target[self.valid_indexes], cat_label)
 
     def test_class_prevalence(self, cat_label=1):
-        return sum(1.0 for x in self.test.target if x == cat_label) / self.num_test_documents()
+        return self.__prevalence(self.devel.target[self.test_indexes], cat_label)
 
     def _vectorize_documents(self, vectorize):
         if vectorize == 'hashing':
@@ -114,9 +134,6 @@ class Dataset:
         devel_vec.sort_indices()
         test_vec.sort_indices()
         return devel_vec, test_vec
-
-    #def is_weighted(self):
-    #    return self.vectorize in ['tfidf', 'count']
 
     #virtually remove invalid documents (documents without any non-zero feature)
     def _get_doc_indexes(self, vector_set):
@@ -243,12 +260,6 @@ class Dataset:
 
 
     def fetch_reuters21579(self, data_path=None, subset='train'):
-        class Reuters21579:
-            def __init__(self, data, target, target_names):
-                self.data = data
-                self.target = target
-                self.target_names = target_names
-
         err_param_range('subset', subset, ['train', 'test'])
         if data_path is None:
             data_path = os.path.join(get_data_home(), 'reuters')
@@ -277,6 +288,54 @@ class Dataset:
 
         data = [(u'{title}\n{body}\n{unproc}'.format(**doc), doc['topics']) for doc in requested_subset['documents']]
         text_data, topics = zip(*data)
-        return Reuters21579(data=text_data, target=topics, target_names=requested_subset['categories'])
+        return Dataset(data=text_data, target=topics, target_names=requested_subset['categories'])
+
+    def fetch_movie_reviews(self, subset='train', data_path=None, train_test_split=0.7):
+
+        err_param_range('subset', subset, ['train', 'test'])
+
+        if data_path is None:
+            data_path = os.path.join(nltk.data.path[0], 'corpora')
+
+        moviereviews_pickle_path = os.path.join(data_path,
+                                                'movie_reviews.' + subset + str(train_test_split) + '.pickle')
+        if not os.path.exists(moviereviews_pickle_path):
+            documents = dict([(cat, []) for cat in ['neg', 'pos']])
+            [documents[i.split('/')[0]].append(' '.join([w for w in movie_reviews.words(i)])) for i in movie_reviews.fileids()]
+
+            def split_at(list_, prop):
+                split_point = int(prop * len(list_))
+                return list_[:split_point], list_[split_point:]
+
+            tr_pos, te_pos = split_at(documents['pos'], train_test_split)
+            tr_neg, te_neg = split_at(documents['neg'], train_test_split)
+            target_names = ['negative', 'positive']
+
+            def distribute_evenly(pos_docs, neg_docs):
+                data = pos_docs + neg_docs
+                target = [1]*len(pos_docs) + [0]*len(neg_docs)
+                # to prevent all positive (negative) documents to be placed together, we distribute them evenly
+                random.seed(1)
+                data_target = zip(data,target)
+                random.shuffle(data_target)
+                data[:], target[:] = zip(*data_target)
+                return Dataset(data=np.array(data),
+                               target=np.array(target),
+                               target_names=target_names)
+
+            train = distribute_evenly(tr_pos, tr_neg)
+            test = distribute_evenly(te_pos, te_neg)
+
+            pickle.dump(train,
+                        open(os.path.join(data_path, 'movie_reviews.train' + str(train_test_split) + '.pickle'), 'wb'),
+                        protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(test,
+                        open(os.path.join(data_path, 'movie_reviews.test' + str(train_test_split) + '.pickle'), 'wb'),
+                        protocol=pickle.HIGHEST_PROTOCOL)
+
+            return train if subset == 'train' else test
+        else:
+            return pickle.load(open(moviereviews_pickle_path, 'rb'))
+
 
 

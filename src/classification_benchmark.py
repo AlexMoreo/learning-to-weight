@@ -7,6 +7,7 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
+import time
 from dataset_loader import *
 from weighted_vectors import WeightedVectors
 from result_table import ReusltTable
@@ -166,7 +167,7 @@ def logistic_regression(data, results):
                         lr_ = LogisticRegression(C=c, penalty=l, dual=d, tol=tol, n_jobs=-1).fit(trX, trY)
                         vaY_ = lr_.predict(vaX)
                         _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                        print 'Train SVM (c=%.3f, penalty=%s, dual=%s, tol=%f) got f-score=%f' % (c, l, d, tol, f1)
+                        print 'Train Logistic Regression (c=%.3f, penalty=%s, dual=%s, tol=%f) got f-score=%f' % (c, l, d, tol, f1)
                         if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'C':c, 'penalty':l, 'dual':d, 'tol':tol}
@@ -209,7 +210,7 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroups', 'reuters21578'])
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroups', 'reuters21578', 'movie_reviews'])
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
     parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
@@ -233,12 +234,15 @@ if __name__ == '__main__':
             num_cats = 20
         elif args.dataset == 'reuters21578':
             num_cats = 115
+        elif args.dataset == 'movie_reviews':
+            num_cats = 2
         feat_sel = 10000
         for vectorizer in ['count', 'sublinear_tfidf', 'hashing', 'binary', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
             for pos_cat_code in range(num_cats):
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
-                data = Dataset(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
-                print("|Tr|=%d (val=%d) [prev+ %f]" % (data.num_devel_docs(), data.num_val_documents(), data.class_prevalence()))
+                data = DatasetLoader(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
+                print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
+                print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
                 print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
 
                 run_benchmark(data, results, benchmarks)
