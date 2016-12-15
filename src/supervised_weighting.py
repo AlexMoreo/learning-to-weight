@@ -145,7 +145,7 @@ def main(argv=None):
     create_if_not_exists(FLAGS.checkpointdir)
     create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
-    pc = data.class_prevalence()
+    pc = data.devel_class_prevalence()
 
     def supervised_idf(tpr, fpr):
         if FLAGS.pretrain == 'off': return 0.0
