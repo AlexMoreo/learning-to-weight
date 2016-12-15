@@ -15,7 +15,6 @@ from helpers import *
 from sklearn.externals.six.moves import html_parser
 from sklearn.externals.six.moves import urllib
 from sklearn.datasets import get_data_home
-from sklearn.feature_extraction.text import HashingVectorizer
 
 def _not_in_sphinx():
     # Hack to detect whether we are running by the sphinx builder
@@ -142,8 +141,7 @@ class ReutersParser(html_parser.HTMLParser):
                 total_sz_mb = '%.2f MB' % (size / 1e6)
                 current_sz_mb = '%.2f MB' % ((blocknum * bs) / 1e6)
                 if _not_in_sphinx():
-                    print('\rdownloaded %s / %s' % (current_sz_mb, total_sz_mb),
-                          end='')
+                    print('\rdownloaded %s / %s' % (current_sz_mb, total_sz_mb), end='')
 
             archive_path = os.path.join(self.data_path, ARCHIVE_FILENAME)
             urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path,
@@ -153,3 +151,4 @@ class ReutersParser(html_parser.HTMLParser):
             print("untarring Reuters dataset...")
             tarfile.open(archive_path, 'r:gz').extractall(self.data_path)
             print("done.")
+

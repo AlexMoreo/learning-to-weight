@@ -210,7 +210,7 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=['20newsgroups', 'reuters21578', 'movie_reviews'])
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=DatasetLoader.valid_datasets)
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
     parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
@@ -230,15 +230,9 @@ if __name__ == '__main__':
     if args.dataset:
         print "Runing classification benchmark on baselines"
         print "Dataset: " + args.dataset
-        if args.dataset == '20newsgroups':
-            num_cats = 20
-        elif args.dataset == 'reuters21578':
-            num_cats = 115
-        elif args.dataset == 'movie_reviews':
-            num_cats = 2
         feat_sel = 10000
         for vectorizer in ['count', 'sublinear_tfidf', 'hashing', 'binary', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
-            for pos_cat_code in range(num_cats):
+            for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = DatasetLoader(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
                 print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))

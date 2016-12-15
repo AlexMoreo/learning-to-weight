@@ -134,6 +134,19 @@ def tee(outstring, fout):
     print outstring
     fout.write(outstring + '\n')
 
+
+def split_at(list_, prop):
+    split_point = int(prop * len(list_))
+    return list_[:split_point], list_[split_point:]
+
+def shuffle_tied(l1, l2, random_seed=None):
+    if random_seed is not None:
+        random.seed(random_seed)
+    l1_l2_tied = zip(l1, l2)
+    random.shuffle(l1_l2_tied)
+    l1_, l2_ = zip(*l1_l2_tied)
+    return list(l1_), list(l2_)
+
 def evaluation_metrics(predictions, true_labels):
     if sum(true_labels)==0 and sum(predictions == 0):
         return 1.0, 1.0, 1.0, 1.0

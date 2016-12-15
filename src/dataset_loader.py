@@ -6,6 +6,7 @@ from sklearn.datasets import get_data_home
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.externals.six.moves import urllib
 from helpers import *
 import numpy as np
 from sklearn.feature_selection import SelectKBest
@@ -13,7 +14,9 @@ from sklearn.feature_selection import chi2
 from feature_selection_function import ContTable
 from glob import glob
 import cPickle as pickle
-from random import shuffle
+import tarfile
+from os.path import join
+from os import listdir
 
 class Dataset:
     def __init__(self, data, target, target_names):
@@ -22,10 +25,16 @@ class Dataset:
         self.target_names = target_names
 
 class DatasetLoader:
+    valid_datasets = ['20newsgroups', 'reuters21578', 'movie_reviews', 'sentence_polarity', 'imdb']
+    valid_vectorizers = ['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf']
+    valid_repmodes = ['sparse', 'dense', 'sparse_index']
+    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.1, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
-        err_param_range('vectorize', vectorize, valid_values=['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf'])
-        err_param_range('rep_mode', rep_mode, valid_values=['sparse', 'dense', 'sparse_index'])
-        err_param_range('dataset', dataset, valid_values=['20newsgroups', 'reuters21578', 'movie_reviews'])
+        err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
+        err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
+        err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
+        err_exit(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset],
+                 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
@@ -37,12 +46,18 @@ class DatasetLoader:
             self.devel = self.fetch_reuters21579(subset='train')
             self.test  = self.fetch_reuters21579(subset='test')
             self.classification = 'multi-label'
-        else: #movie_reviews
+        elif dataset == 'movie_reviews':
             self.devel = self.fetch_movie_reviews(subset='train')
             self.test = self.fetch_movie_reviews(subset='test')
-            self.classification = 'single-label'
-        err_exit(positive_cat is not None and positive_cat not in range(len(self.devel.target_names)),
-                 'Error. Positive category not in scope.')
+            self.classification = 'polarity'
+        elif dataset == 'sentence_polarity':
+            self.devel = self.fetch_sentence_polarity(subset='train')
+            self.test = self.fetch_sentence_polarity(subset='test')
+            self.classification = 'polarity'
+        elif dataset == 'imdb':
+            self.devel = self.fetch_IMDB(subset='train')
+            self.test = self.fetch_IMDB(subset='test')
+            self.classification = 'polarity'
         self.epoch = 0
         self.offset = 0
         self.positive_cat = positive_cat
@@ -71,7 +86,7 @@ class DatasetLoader:
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
-        #pos_cat_code = self.devel.target_names.index(self.positive_cat)
+        if self.classification == 'polarity': return
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
         def __binarize_codes_single_label(target, pos_code):
             target[target == pos_code] = -1
@@ -168,21 +183,22 @@ class DatasetLoader:
         weights = self.weight_getter(batch)
         return indices, values, weights
 
+    def __get_set(self, vec_set, target, indexes):
+        repr = self._batch_getter(vec_set[indexes])
+        labels = target[indexes]
+        return repr, labels
+
     def get_devel_set(self):
-        devel_rep = self._batch_getter(self.devel_vec[self.devel_indexes])
-        labels = self.devel.target[self.devel_indexes]
-        return devel_rep, labels
+        return self.__get_set(self.devel_vec, self.devel.target, self.devel_indexes)
 
     def get_train_set(self):
-        train_rep = self._batch_getter(self.devel_vec[self.train_indexes])
-        labels = self.devel.target[self.train_indexes]
-        return train_rep, labels
+        return self.__get_set(self.devel_vec, self.devel.target, self.train_indexes)
 
     def get_validation_set(self):
-        return self.val_batch()
+        return self.__get_set(self.devel_vec, self.devel.target, self.valid_indexes)
 
     def get_test_set(self):
-        return self.test_batch()
+        return self.__get_set(self.test_vec, self.test.target, self.test_indexes)
 
     def train_batch(self, batch_size=64):
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
@@ -197,16 +213,10 @@ class DatasetLoader:
         return batch_rep, labels
 
     def val_batch(self):
-        batch = self.devel_vec[self.valid_indexes]
-        batch_rep = self._batch_getter(batch)
-        labels = self.devel.target[self.valid_indexes]
-        return batch_rep, labels
+        return self.get_validation_set()
 
     def test_batch(self):
-        batch = self.test_vec[self.test_indexes]
-        batch_rep = self._batch_getter(batch)
-        labels=self.test.target[self.test_indexes]
-        return batch_rep, labels
+        return self.get_test_set()
 
     def feat_sup_statistics(self, feat_index, cat_label=1):
         feat_vec = self.devel_vec[:,feat_index]
@@ -245,7 +255,6 @@ class DatasetLoader:
         return np.unique(self.devel.target_names)
 
     def fetch_20newsgroups(self, data_path=None, subset='train'):
-        err_param_range('subset', subset, ['train', 'test'])
         if data_path is None:
             data_path = os.path.join(get_data_home(), '20newsgroups')
             create_if_not_exists(data_path)
@@ -258,9 +267,7 @@ class DatasetLoader:
             dataset = pickle.load(open(_20news_pickle_path, 'rb'))
         return dataset
 
-
     def fetch_reuters21579(self, data_path=None, subset='train'):
-        err_param_range('subset', subset, ['train', 'test'])
         if data_path is None:
             data_path = os.path.join(get_data_home(), 'reuters')
         reuters_pickle_path = os.path.join(data_path, "reuters." + subset + ".pickle")
@@ -290,52 +297,105 @@ class DatasetLoader:
         text_data, topics = zip(*data)
         return Dataset(data=text_data, target=topics, target_names=requested_subset['categories'])
 
+    def __distribute_evenly(self, pos_docs, neg_docs, target_names):
+        data = pos_docs + neg_docs
+        target = [1] * len(pos_docs) + [0] * len(neg_docs)
+        # to prevent all positive (negative) documents to be placed together, we distribute them evenly
+        data, target = shuffle_tied(data, target, random_seed=0)
+        return Dataset(data=np.array(data),
+                       target=np.array(target),
+                       target_names=target_names)
+
+    def __process_posneg_dataset(self, pos_docs, neg_docs, train_test_split):
+        tr_pos, te_pos = split_at(pos_docs, train_test_split)
+        tr_neg, te_neg = split_at(neg_docs, train_test_split)
+        target_names = ['negative', 'positive']
+        train = self.__distribute_evenly(tr_pos, tr_neg, target_names)
+        test = self.__distribute_evenly(te_pos, te_neg, target_names)
+        return train, test
+
+    def __pickle_dataset(self, train, test, path, name, posfix=''):
+        pickle.dump(train, open(join(path, name+'.train' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(test, open(join(path, name+'.test' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
     def fetch_movie_reviews(self, subset='train', data_path=None, train_test_split=0.7):
-
-        err_param_range('subset', subset, ['train', 'test'])
-
         if data_path is None:
-            data_path = os.path.join(nltk.data.path[0], 'corpora')
+            data_path = join(nltk.data.path[0], 'corpora')
 
-        moviereviews_pickle_path = os.path.join(data_path,
-                                                'movie_reviews.' + subset + str(train_test_split) + '.pickle')
+        _posfix=str(train_test_split)
+        _dataname='movie_reviews'
+        moviereviews_pickle_path = os.path.join(data_path, _dataname + '.' + subset + _posfix + '.pickle')
         if not os.path.exists(moviereviews_pickle_path):
             documents = dict([(cat, []) for cat in ['neg', 'pos']])
             [documents[i.split('/')[0]].append(' '.join([w for w in movie_reviews.words(i)])) for i in movie_reviews.fileids()]
 
-            def split_at(list_, prop):
-                split_point = int(prop * len(list_))
-                return list_[:split_point], list_[split_point:]
-
-            tr_pos, te_pos = split_at(documents['pos'], train_test_split)
-            tr_neg, te_neg = split_at(documents['neg'], train_test_split)
-            target_names = ['negative', 'positive']
-
-            def distribute_evenly(pos_docs, neg_docs):
-                data = pos_docs + neg_docs
-                target = [1]*len(pos_docs) + [0]*len(neg_docs)
-                # to prevent all positive (negative) documents to be placed together, we distribute them evenly
-                random.seed(1)
-                data_target = zip(data,target)
-                random.shuffle(data_target)
-                data[:], target[:] = zip(*data_target)
-                return Dataset(data=np.array(data),
-                               target=np.array(target),
-                               target_names=target_names)
-
-            train = distribute_evenly(tr_pos, tr_neg)
-            test = distribute_evenly(te_pos, te_neg)
-
-            pickle.dump(train,
-                        open(os.path.join(data_path, 'movie_reviews.train' + str(train_test_split) + '.pickle'), 'wb'),
-                        protocol=pickle.HIGHEST_PROTOCOL)
-            pickle.dump(test,
-                        open(os.path.join(data_path, 'movie_reviews.test' + str(train_test_split) + '.pickle'), 'wb'),
-                        protocol=pickle.HIGHEST_PROTOCOL)
+            train, test = self.__process_posneg_dataset(pos_docs=documents['pos'], neg_docs=documents['neg'], train_test_split=train_test_split)
+            self.__pickle_dataset(train, test, data_path,_dataname,_posfix)
 
             return train if subset == 'train' else test
         else:
             return pickle.load(open(moviereviews_pickle_path, 'rb'))
 
+    def fetch_sentence_polarity(self, subset='train', data_path=None, train_test_split=0.7):
+        if data_path is None:
+            data_path = join(os.path.expanduser('~'), 'sentiment_data')
+        create_if_not_exists(data_path)
+
+        _posfix=str(train_test_split)
+        _dataname='sentence_polarity'
+        sentpolarity_pickle_path = join(data_path, _dataname + '.' + subset + _posfix + '.pickle')
+
+        if not os.path.exists(sentpolarity_pickle_path):
+            DOWNLOAD_URL = ('https://www.cs.cornell.edu/people/pabo/movie-review-data/rt-polaritydata.tar.gz')
+            archive_path = os.path.join(data_path, 'rt-polaritydata.tar.gz')
+            print("downloading file...")
+            urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path)
+            print("untarring sentiment dataset...")
+            tarfile.open(archive_path, 'r:gz').extractall(data_path)
+            positive_sentences = [unicode(s, 'ISO-8859-1') for s in open(os.path.join(data_path, 'rt-polaritydata', 'rt-polarity.pos'), 'r')]
+            negative_sentences = [unicode(s, 'ISO-8859-1') for s in open(os.path.join(data_path, 'rt-polaritydata', 'rt-polarity.neg'), 'r')]
+            train, test = self.__process_posneg_dataset(positive_sentences, negative_sentences, train_test_split)
+            self.__pickle_dataset(train, test, data_path, _dataname, _posfix)
+
+            return train if subset == 'train' else test
+        else:
+            return pickle.load(open(sentpolarity_pickle_path, 'rb'))
+
+    def fetch_IMDB(self, subset='train', data_path=None):
+        if data_path is None:
+            data_path = join(os.path.expanduser('~'), 'sentiment_data')
+        create_if_not_exists(data_path)
+
+        _dataname = 'imdb'
+        imdb_pickle_file = join(data_path, _dataname+'.'+subset+'.pickle')
+        if not os.path.exists(imdb_pickle_file):
+            DOWNLOAD_URL = ('http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz')
+            archive_path = os.path.join(data_path, 'aclImdb_v1.tar.gz')
+            if not os.path.exists(archive_path):
+                print("downloading file...")
+                urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path)
+            print("untarring sentiment dataset...")
+            tarfile.open(archive_path, 'r:gz').extractall(data_path)
+
+            data = dict()
+            for split in ['train', 'test']:
+                if split not in data: data[split] = dict()
+                for polarity in ['pos', 'neg']:
+                    if polarity not in data[split]: data[split][polarity] = []
+                    reviews_path = join(data_path,'aclImdb',split,polarity)
+                    for review in listdir(reviews_path):
+                        review_txt = open(join(reviews_path, review),'r').read()
+                        data[split][polarity].append(review_txt)
+
+            target_names = ['negative', 'positive']
+
+            train = self.__distribute_evenly(data['train']['pos'], data['train']['neg'], target_names)
+            test = self.__distribute_evenly(data['test']['pos'], data['test']['neg'], target_names)
+            self.__pickle_dataset(train, test, data_path, _dataname)
+
+            return train if subset=='train' else test
+
+        else:
+            return pickle.load(open(imdb_pickle_file, 'rb'))
 
 

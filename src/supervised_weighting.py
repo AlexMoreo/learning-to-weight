@@ -101,14 +101,14 @@ def main(argv=None):
         logistic_params = [log_weights, log_bias]
         if FLAGS.optimizer == 'sgd':
             op_step = tf.Variable(0, trainable=False)
-            decay = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
-            end2end_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
+            decay   = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
+            end2end_optimizer  = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
             logistic_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss, var_list=logistic_params)
         elif FLAGS.optimizer == 'adam':
-            end2end_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+            end2end_optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
             logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
         else:  #rmsprop
-            end2end_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
+            end2end_optimizer  = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
             logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
 
         #pre-learn the idf-like function as any feature selection function
@@ -292,7 +292,7 @@ def main(argv=None):
         print 'Weighting documents'
         train_x, train_y = data.get_train_set()
         train_x_weighted = normalized.eval(feed_dict={x: train_x, keep_p: 1.0})
-        val_x, val_y = data.get_validation_set()
+        val_x, val_y   = data.get_validation_set()
         val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
@@ -309,15 +309,12 @@ def main(argv=None):
         wv.pickle(FLAGS.outdir, outname)
         print 'Weighted vectors saved at '+outname
 
-
-
-
 #-------------------------------------
 if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in ["20newsgroups", "reuters21578"] (default 20newsgroups)')
+    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+DatasetLoader.valid_datasets+' (default 20newsgroups)')
     flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
@@ -343,7 +340,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
-    err_param_range('dataset', FLAGS.dataset, ['20newsgroups', 'reuters21578'])
+    err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
