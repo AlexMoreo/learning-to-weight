@@ -314,7 +314,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+DatasetLoader.valid_datasets+' (default 20newsgroups)')
+    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
     flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
