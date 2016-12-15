@@ -40,7 +40,7 @@ def main(argv=None):
     print("|Te|=%d" % data.num_test_documents())
     print("|V|=%d" % data.num_features())
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
-    print("Prevalence of positive class: %.3f" % data.class_prevalence())
+    print("Prevalence of positive class: %.3f" % data.devel_class_prevalence())
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -242,10 +242,10 @@ def main(argv=None):
                     #tf.initialize_all_variables().run()
                     #last_improvement = 0
 
-                eval_dict = as_feed_dict(data.test_batch(), dropout=False)
-                predictions = prediction.eval(feed_dict=eval_dict)
-                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
+                #eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+                #predictions = prediction.eval(feed_dict=eval_dict)
+                #acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
+                #print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
