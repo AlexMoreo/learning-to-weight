@@ -15,10 +15,9 @@ from result_table import ReusltTable
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
 def linear_svm(data, results):
-    param_c = [1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3]
+    param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
     param_loss = ['hinge','squared_hinge']
     param_dual = [False, True]
-    param_tol = [1, 1e-1, 1e-2, 1e-3, 1e-4]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
     init_time = time.time()
@@ -26,17 +25,16 @@ def linear_svm(data, results):
     for c in param_c:
         for l in param_loss:
             for d in param_dual:
-                for tol in param_tol:
-                    try:
-                        svm_ = svm.LinearSVC(C=c, loss=l, dual=d, tol=tol).fit(trX, trY)
-                        vaY_ = svm_.predict(vaX)
-                        _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                        print 'Train SVM (c=%.3f, loss=%s, dual=%s, tol=%f) got f-score=%f' % (c, l, d, tol, f1)
-                        if best_f1 is None or f1 > best_f1:
-                            best_f1 = f1
-                            best_params = {'C':c, 'loss':l, 'dual':d, 'tol':tol}
-                    except ValueError:
-                        print 'Param configuration not supported, skip'
+                try:
+                    svm_ = svm.LinearSVC(C=c, loss=l, dual=d).fit(trX, trY)
+                    vaY_ = svm_.predict(vaX)
+                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                    print 'Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1)
+                    if best_f1 is None or f1 > best_f1:
+                        best_f1 = f1
+                        best_params = {'C':c, 'loss':l, 'dual':d}
+                except ValueError:
+                    print 'Param configuration not supported, skip'
 
     results.init_row_result('LinearSVM', data)
     if isinstance(data, WeightedVectors):
@@ -46,7 +44,7 @@ def linear_svm(data, results):
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
-        svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual'], tol=best_params['tol']).fit(deX, deY)
+        svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual']).fit(deX, deY)
         teY_ = svm_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY))
@@ -231,7 +229,7 @@ if __name__ == '__main__':
         print "Runing classification benchmark on baselines"
         print "Dataset: " + args.dataset
         feat_sel = 10000
-        for vectorizer in ['count', 'sublinear_tfidf', 'hashing', 'binary', 'tfidf']: #TODO tf, sublinear_tf, tf ig, bm25, l1...
+        for vectorizer in DatasetLoader.valid_vectorizers: #TODO tf ig, bm25
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = DatasetLoader(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)

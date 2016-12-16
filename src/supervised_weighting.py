@@ -13,16 +13,17 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
-#from baseline_classification import train_classifiers
-
-
-
+#TODO: add micro F1
+#TODO: check DIVS in results
+#TODO: repeat experiments, average results
+#TODO: implement tf ig
+#TODO: launch logistic regression with learnt vectors
+#TODO: add a new non-linear classifier
 #TODO: idf-like as a multilayer feedforward (not as a conv)
 #TODO: parallelize supervised info vector
 #TODO: balanced batchs
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
-#TODO: plots: add C, add steps, add (tpr,fnr) points,
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 

@@ -26,7 +26,7 @@ class Dataset:
 
 class DatasetLoader:
     valid_datasets = ['20newsgroups', 'reuters21578', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf']
+    valid_vectorizers = ['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.1, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
@@ -129,13 +129,16 @@ class DatasetLoader:
 
     def _vectorize_documents(self, vectorize):
         if vectorize == 'hashing':
-            vectorizer = HashingVectorizer(n_features=10000, stop_words='english')
+            vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
             self.weight_getter = self._get_none
         elif vectorize == 'tfidf':
             vectorizer = TfidfVectorizer(stop_words='english')
             self.weight_getter = self._get_weights
         elif vectorize == 'sublinear_tfidf':
             vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
+            self.weight_getter = self._get_weights
+        elif vectorize == 'sublinear_tf':
+            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False)
             self.weight_getter = self._get_weights
         elif vectorize == 'count':
             vectorizer = CountVectorizer(stop_words='english')
