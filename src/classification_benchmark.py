@@ -1,3 +1,4 @@
+from __future__ import print_function
 import sys
 import argparse
 from sklearn import svm
@@ -14,6 +15,7 @@ from result_table import ReusltTable
 
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
+
 def linear_svm(data, results):
     param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
     param_loss = ['hinge','squared_hinge']
@@ -29,12 +31,13 @@ def linear_svm(data, results):
                     svm_ = svm.LinearSVC(C=c, loss=l, dual=d).fit(trX, trY)
                     vaY_ = svm_.predict(vaX)
                     _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                    print 'Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1)
+                    print('Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
                     if best_f1 is None or f1 > best_f1:
                         best_f1 = f1
                         best_params = {'C':c, 'loss':l, 'dual':d}
+                        #print('\rTrain SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end='')
                 except ValueError:
-                    print 'Param configuration not supported, skip'
+                    print('Param configuration not supported, skip')
 
     results.init_row_result('LinearSVM', data)
     if isinstance(data, WeightedVectors):
@@ -47,7 +50,7 @@ def linear_svm(data, results):
         svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual']).fit(deX, deY)
         teY_ = svm_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
@@ -76,13 +79,13 @@ def random_forest(data, results):
                             criterion=criterion, max_features=max_features, class_weight=class_weight, n_jobs=-1).fit(trX, trY)
                         vaY_ = rf_.predict(vaX)
                         _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                        print 'Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
-                              (n_estimators, criterion, max_features, class_weight, f1)
+                        print('Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                              (n_estimators, criterion, max_features, class_weight, f1))
                         if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'n_estimators':n_estimators, 'criterion':criterion, 'max_features':max_features, 'class_weight':class_weight}
                     except ValueError:
-                        print 'Param configuration not supported, skip'
+                        print('Param configuration not supported, skip')
 
     results.init_row_result('RandomForest', data)
     if isinstance(data, WeightedVectors):
@@ -99,7 +102,7 @@ def random_forest(data, results):
                                      n_jobs=-1).fit(deX, deY)
         teY_ = rf_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time,
                                          notes=str(best_params))
@@ -120,14 +123,14 @@ def multinomial_nb(data, results):
             nb_ = MultinomialNB(alpha=alpha).fit(trX, trY)
             vaY_ = nb_.predict(vaX)
             _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
-            print 'Train Multinomial (alpha=%.3f) got f-score=%f' % (alpha, f1)
+            print('Train Multinomial (alpha=%.3f) got f-score=%f' % (alpha, f1))
             if best_f1 is None or f1 > best_f1:
                 best_f1 = f1
                 best_params = {'alpha': alpha}
         except ValueError:
-            print 'Param configuration not supported, skip'
+            print('Param configuration not supported, skip')
         except IndexError:
-            print 'Param configuration produced index error, skip'
+            print('Param configuration produced index error, skip')
 
     results.init_row_result('MultinomialNB', data)
     if isinstance(data, WeightedVectors):
@@ -140,7 +143,7 @@ def multinomial_nb(data, results):
         nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
         teY_ = nb_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec))
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
                                          notes=str(best_params))
@@ -152,7 +155,6 @@ def logistic_regression(data, results):
     param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
     param_penalty = ['l2','l1']
     param_dual = [False, True]
-    param_tol = [1e-4]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
     init_time = time.time()
@@ -160,17 +162,16 @@ def logistic_regression(data, results):
     for c in param_c:
         for l in param_penalty:
             for d in param_dual:
-                for tol in param_tol:
-                    try:
-                        lr_ = LogisticRegression(C=c, penalty=l, dual=d, tol=tol, n_jobs=-1).fit(trX, trY)
-                        vaY_ = lr_.predict(vaX)
-                        _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                        print 'Train Logistic Regression (c=%.3f, penalty=%s, dual=%s, tol=%f) got f-score=%f' % (c, l, d, tol, f1)
-                        if best_f1 is None or f1 > best_f1:
-                            best_f1 = f1
-                            best_params = {'C':c, 'penalty':l, 'dual':d, 'tol':tol}
-                    except ValueError:
-                        print 'Param configuration not supported, skip'
+                try:
+                    lr_ = LogisticRegression(C=c, penalty=l, dual=d, n_jobs=-1).fit(trX, trY)
+                    vaY_ = lr_.predict(vaX)
+                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                    print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
+                    if best_f1 is None or f1 > best_f1:
+                        best_f1 = f1
+                        best_params = {'C':c, 'penalty':l, 'dual':d}
+                except ValueError:
+                    print('Param configuration not supported, skip')
 
     results.init_row_result('LogisticRegression', data)
     if isinstance(data, WeightedVectors):
@@ -180,10 +181,10 @@ def logistic_regression(data, results):
         print('Best params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
-        lr_ = LogisticRegression(C=best_params['C'], penalty=best_params['penalty'], dual=best_params['dual'], tol=best_params['tol']).fit(deX, deY)
+        lr_ = LogisticRegression(C=best_params['C'], penalty=best_params['penalty'], dual=best_params['dual']).fit(deX, deY)
         teY_ = lr_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print 'Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
@@ -222,12 +223,12 @@ if __name__ == '__main__':
                        'randomforest': not args.no_randomforest,
                        'logisticregression': not args.no_logisticregression})
 
-    print "Loading result file from "+args.resultfile
+    print("Loading result file from "+args.resultfile)
     results = ReusltTable(args.resultfile)
 
     if args.dataset:
-        print "Runing classification benchmark on baselines"
-        print "Dataset: " + args.dataset
+        print("Runing classification benchmark on baselines")
+        print("Dataset: " + args.dataset)
         feat_sel = 10000
         for vectorizer in DatasetLoader.valid_vectorizers: #TODO tf ig, bm25
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
@@ -238,14 +239,15 @@ if __name__ == '__main__':
                 print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
 
                 run_benchmark(data, results, benchmarks)
+                sys.exit()
     if args.vectordir:
-        print "Runing classification benchmark on learnt vectors in " + args.vectordir
+        print("Runing classification benchmark on learnt vectors in " + args.vectordir)
         for vecname in [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]:
-            print "Vector file: " + vecname
+            print("Vector file: " + vecname)
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
             run_benchmark(data, results, benchmarks)
 
-    print "Done."
+    print("Done.")
     results.commit()
 
 

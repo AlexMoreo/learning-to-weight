@@ -63,9 +63,6 @@ class DatasetLoader:
         self.positive_cat = positive_cat
         self.devel_vec, self.test_vec = self._vectorize_documents(vectorize)
         self.devel_indexes = self._get_doc_indexes(self.devel_vec)
-        tr_val_split_point = int(self.num_devel_docs() * (1.0-valid_proportion))
-        self.train_indexes = self.devel_indexes[:tr_val_split_point]
-        self.valid_indexes = self.devel_indexes[tr_val_split_point:]
         self.test_indexes  = self._get_doc_indexes(self.test_vec)
         if self.rep_mode=='dense':
             self.devel_vec = self.devel_vec.todense()
@@ -78,11 +75,21 @@ class DatasetLoader:
             # already sparse representation
             self._batch_getter = self._sparse_index_batch_getter
         if self.positive_cat is not None:
-            pos_cat_name = self.devel.target_names[self.positive_cat]
-            print('Binarize towards positive category %s' % pos_cat_name)
+            print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
             self.binarize_classes()
+            self.divide_train_val_evenly(valid_proportion=valid_proportion)
             self.feature_selection(feat_sel)
         self.cat_vec_dic = dict()
+
+    # Ensures the train and validation splits to approximately preserve the original devel prevalence.
+    # In extremely imbalanced cases, the train set is guaranteed to have some positive examples
+    def divide_train_val_evenly(self, valid_proportion=0.5, pos_cat_code=1):
+        pos_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] == pos_cat_code]
+        neg_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] != pos_cat_code]
+        pos_split_point = int(math.ceil(len(pos_indexes)*(1.0-valid_proportion)))
+        neg_split_point = int(math.ceil(len(neg_indexes)*(1.0-valid_proportion)))
+        self.train_indexes = np.array(pos_indexes[:pos_split_point] + neg_indexes[:neg_split_point])
+        self.valid_indexes = np.array(pos_indexes[pos_split_point:] + neg_indexes[neg_split_point:])
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):

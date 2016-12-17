@@ -13,6 +13,8 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
+#TODO: check out the separability index, and the Fisher score
+#TODO: avoid batching
 #TODO: add micro F1
 #TODO: check DIVS in results
 #TODO: repeat experiments, average results
@@ -31,11 +33,9 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
-
-    if data.vectorize=='count':
-        print('L1-normalize')
-        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    print('L1-normalize')
+    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d" % data.num_tr_documents())
     print("|Va|=%d" % data.num_val_documents())
     print("|Te|=%d" % data.num_test_documents())
@@ -50,7 +50,7 @@ def main(argv=None):
     info_by_feat = len(feat_corr_info[0])
 
     x_size = data.num_features()
-    batch_size = FLAGS.batchsize
+    batch_size = FLAGS.batchsize if FLAGS.batchsize!=-1 else data.num_tr_documents()
     drop_keep_p = 0.8
 
     # graph definition --------------------------------------------------------------
@@ -318,7 +318,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
     flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
-    flags.DEFINE_integer('batchsize', 32, 'Size of the batches (default 32).')
+    flags.DEFINE_integer('batchsize', 32, 'Size of the batches. Set to -1 to avoid batching (default 32).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
