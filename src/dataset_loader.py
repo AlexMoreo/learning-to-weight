@@ -317,6 +317,8 @@ class DatasetLoader:
                        target_names=target_names)
 
     def __process_posneg_dataset(self, pos_docs, neg_docs, train_test_split):
+        random.shuffle(pos_docs)
+        random.shuffle(neg_docs)
         tr_pos, te_pos = split_at(pos_docs, train_test_split)
         tr_neg, te_neg = split_at(neg_docs, train_test_split)
         target_names = ['negative', 'positive']
