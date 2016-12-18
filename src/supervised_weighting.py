@@ -236,7 +236,8 @@ def main(argv=None):
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savemodel(session, step+idf_steps, saver, FLAGS.checkpointdir, 'model')
+                    savedstep=step+idf_steps
+                    savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
                     #    print 'Reinitializing model parameters'
                     #tf.initialize_all_variables().run()
@@ -256,12 +257,12 @@ def main(argv=None):
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
 
-        if FLAGS.plotmode in ['img', 'show']: plot.plot(step=step)
         tensorboard.close()
 
         # output -------------------------------------------------
         print 'Test evaluation:'
         restore_checkpoint(saver, session, FLAGS.checkpointdir)
+        if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
         eval_dict = as_feed_dict(data.test_batch(), dropout=False)
         predictions = prediction.eval(feed_dict=eval_dict)
         acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
@@ -283,7 +284,7 @@ def main(argv=None):
         if FLAGS.resultcontainer:
             results = ReusltTable(FLAGS.resultcontainer)
             data.vectorize='learned'
-            results.init_row_result('LogisticRegression', data, run=FLAGS.run)
+            results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
             results.set_all(run_params_dic)
@@ -341,6 +342,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
+    err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
