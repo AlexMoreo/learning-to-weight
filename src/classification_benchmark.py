@@ -229,7 +229,7 @@ if __name__ == '__main__':
     if args.dataset:
         print("Runing classification benchmark on baselines")
         print("Dataset: " + args.dataset)
-        feat_sel = 10000
+        feat_sel = 0.1
         for vectorizer in DatasetLoader.valid_vectorizers: #TODO tf ig, bm25
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
@@ -239,7 +239,6 @@ if __name__ == '__main__':
                 print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
 
                 run_benchmark(data, results, benchmarks)
-                sys.exit()
     if args.vectordir:
         print("Runing classification benchmark on learnt vectors in " + args.vectordir)
         for vecname in [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]:

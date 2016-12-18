@@ -31,17 +31,16 @@ def main(argv=None):
 
     init_time = time.time()
     pos_cat_code = FLAGS.cat
-    feat_sel = FLAGS.fs if FLAGS.fs > 0 else None
+    feat_sel = FLAGS.fs
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
     print('L1-normalize')
     data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
     data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
-    print("|Tr|=%d" % data.num_tr_documents())
-    print("|Va|=%d" % data.num_val_documents())
-    print("|Te|=%d" % data.num_test_documents())
+    print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
+    print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
+    print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
     print("|V|=%d" % data.num_features())
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
-    print("Prevalence of positive class: %.3f" % data.devel_class_prevalence())
 
     print('Getting supervised correlations')
     sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
@@ -201,18 +200,18 @@ def main(argv=None):
             if FLAGS.plotmode in ['img', 'show']: plot.plot(step=step)
 
         # train -------------------------------------------------
-        show_step = plotsteps = 100
+        show_step = plotsteps = 10
         valid_step = show_step * 10
         last_improvement = 0
-        early_stop_steps = 20
+        early_stop_steps = 10
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = 10000
         best_f1 = 0.0
         log_steps = 0
         for step in range(1,FLAGS.maxsteps):
-            in_ogistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
-            optimizer_ = logistic_optimizer if in_ogistic_phase else end2end_optimizer
+            in_logistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
+            optimizer_ = logistic_optimizer if in_logistic_phase else end2end_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
@@ -221,7 +220,7 @@ def main(argv=None):
             if step % show_step == 0:
                 sum = end2end_summaries.eval(feed_dict=tr_dict)
                 tensorboard.add_train_summary(sum, step+idf_steps)
-                tr_phase = 'logistic' if in_ogistic_phase else 'end2end'
+                tr_phase = 'logistic' if in_logistic_phase else 'end2end'
                 print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
                 l_ave = 0.0
 
@@ -316,7 +315,7 @@ if __name__ == '__main__':
     FLAGS = flags.FLAGS
 
     flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
-    flags.DEFINE_integer('fs', 10000, 'Indicates the number of features to be selected (default 10000 --plug a negative value for selectiong all).')
+    flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 32, 'Size of the batches. Set to -1 to avoid batching (default 32).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
@@ -345,6 +344,7 @@ if __name__ == '__main__':
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
+    err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 

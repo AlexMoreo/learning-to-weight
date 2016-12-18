@@ -29,7 +29,7 @@ class DatasetLoader:
     valid_vectorizers = ['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
-    def __init__(self, dataset, valid_proportion=0.1, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
+    def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
@@ -78,7 +78,7 @@ class DatasetLoader:
             print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
-            self.feature_selection(feat_sel)
+            self.feature_selection(int(feat_sel*self.num_features()))
         self.cat_vec_dic = dict()
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
@@ -113,7 +113,8 @@ class DatasetLoader:
             print 'Warning: feature selection ommitted when hashing is activated'
             return
         if feat_sel is not None:
-            print('Selecting %d most important features' % feat_sel)
+            print('Selecting %d most important features from %d features' % (feat_sel, self.num_features()))
+            err_exit(self.devel_vec.shape[0]!=len(self.devel.target), "debug: vector length")
             fs = SelectKBest(chi2, k=feat_sel)
             self.devel_vec = fs.fit_transform(self.devel_vec, self.devel.target)
             self.test_vec = fs.transform(self.test_vec)
@@ -409,5 +410,4 @@ class DatasetLoader:
 
         else:
             return pickle.load(open(imdb_pickle_file, 'rb'))
-
 
