@@ -209,6 +209,7 @@ def main(argv=None):
         logistic_optimization_phase = 10000
         best_f1 = 0.0
         log_steps = 0
+        savedstep = -1
         for step in range(1,FLAGS.maxsteps):
             in_logistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
             optimizer_ = logistic_optimizer if in_logistic_phase else end2end_optimizer
@@ -235,7 +236,7 @@ def main(argv=None):
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
-                if improves:
+                if improves or savedstep<0:
                     savedstep=step+idf_steps
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
