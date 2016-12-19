@@ -236,7 +236,7 @@ def main(argv=None):
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
-                if improves or savedstep<0:
+                if improves:
                     savedstep=step+idf_steps
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
                 #elif f1 == 0.0 and last_improvement > 5:
@@ -262,7 +262,8 @@ def main(argv=None):
 
         # output -------------------------------------------------
         print 'Test evaluation:'
-        restore_checkpoint(saver, session, FLAGS.checkpointdir)
+        if savedstep>0:
+            restore_checkpoint(saver, session, FLAGS.checkpointdir)
         if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
         eval_dict = as_feed_dict(data.test_batch(), dropout=False)
         predictions = prediction.eval(feed_dict=eval_dict)
