@@ -231,7 +231,7 @@ def main(argv=None):
                 predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
                 tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                improves = (f1 >= best_f1)
+                improves = (f1>0.0 and f1 > best_f1)
                 best_f1 = max(best_f1, f1)
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
