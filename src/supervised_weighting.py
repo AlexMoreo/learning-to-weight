@@ -203,7 +203,7 @@ def main(argv=None):
         show_step = plotsteps = 10
         valid_step = show_step * 10
         last_improvement = 0
-        early_stop_steps = 10
+        early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = 10000
