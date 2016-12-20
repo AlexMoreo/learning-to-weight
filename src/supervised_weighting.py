@@ -257,6 +257,9 @@ def main(argv=None):
             if last_improvement >= early_stop_steps:
                 print('Early stop after %d validation steps without improvements' % last_improvement)
                 break
+            if best_f1==1.0:
+                print('Max validation score reached. End of training.')
+                break
 
         tensorboard.close()
 
