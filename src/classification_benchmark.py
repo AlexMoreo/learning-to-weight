@@ -230,7 +230,7 @@ if __name__ == '__main__':
         print("Runing classification benchmark on baselines")
         print("Dataset: " + args.dataset)
         feat_sel = 0.1
-        for vectorizer in DatasetLoader.valid_vectorizers: #TODO tf ig, bm25
+        for vectorizer in DatasetLoader.valid_vectorizers:
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = DatasetLoader(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)

@@ -23,12 +23,26 @@ def infogain(tpr, fpr, pc):
     return ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) \
            + ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
 
+def gainratio(tpr, fpr, pc):
+    pnc = 1.0 - pc
+    norm = pc * math.log(pc, 2) + pnc * math.log(pnc, 2)
+    return infogain(tpr, fpr, pc) / (-norm)
+
 def chisquare(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
     den = cell.p_f() * cell.p_not_f() * cell.p_c() * cell.p_not_c()
     if den==0.0: return 0.0
     num = gss(tpr,fpr,pc)**2
     return num / den
+
+def rel_factor(tpr, fpr, pc):
+    cell = get_probs(tpr, fpr, pc)
+
+    a = cell.tp
+    c = cell.fp
+
+    return math.log(2.0 + (a * 1.0 / max(1, c)), 2)
+
 
 def gss(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
@@ -74,3 +88,11 @@ class ContTable:
     def fpr(self):
         _c = 1.0*self.get_not_c()
         return self.fp / _c if _c > 0.0 else 0.0
+
+
+def feature_label_contingency_table(positive_document_indexes, feature_document_indexes, nD):
+    tp_ = len(positive_document_indexes & feature_document_indexes)
+    fp_ = len(feature_document_indexes - positive_document_indexes)
+    fn_ = len(positive_document_indexes - feature_document_indexes)
+    tn_ = nD - (tp_ + fp_ + fn_)
+    return ContTable(tp=tp_, tn=tn_, fp=fp_, fn=fn_)

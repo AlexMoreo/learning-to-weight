@@ -13,17 +13,13 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
-#TODO: check out the separability index, and the Fisher score
-#TODO: avoid batching
+#TODO: ConfWeight (tf.GR?)
+#TODO: cambiar P=1 y R=1 if denominator is 0
+#TODO: repeat R0 in reuters, launch 20news and sentiment R0-9 with this batch configuration
+#TODO: check out the separability index
 #TODO: add micro F1
-#TODO: check DIVS in results
-#TODO: repeat experiments, average results
-#TODO: implement tf ig
-#TODO: launch logistic regression with learnt vectors
 #TODO: add a new non-linear classifier
-#TODO: idf-like as a multilayer feedforward (not as a conv)
 #TODO: parallelize supervised info vector
-#TODO: balanced batchs
 #TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
@@ -43,7 +39,7 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
     print('Getting supervised correlations')
-    sup = [data.feat_sup_statistics(f,cat_label=1) for f in range(data.num_features())]
+    sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
     feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
     #feat_corr_info = np.concatenate([[sup_i.p_tp(), sup_i.p_fp(), sup_i.p_fn(), sup_i.p_tn()] for sup_i in sup])
     info_by_feat = len(feat_corr_info[0])

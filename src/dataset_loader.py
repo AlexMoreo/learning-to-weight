@@ -2,10 +2,12 @@ from sklearn.datasets import fetch_20newsgroups
 from reuters21578_parser import ReutersParser
 from nltk.corpus import movie_reviews
 import nltk
+import sklearn
 from sklearn.datasets import get_data_home
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
+from custom_vectorizers import *
 from sklearn.externals.six.moves import urllib
 from helpers import *
 import numpy as np
@@ -17,6 +19,9 @@ import cPickle as pickle
 import tarfile
 from os.path import join
 from os import listdir
+from feature_selection_function import *
+import time
+import scipy
 
 class Dataset:
     def __init__(self, data, target, target_names):
@@ -26,7 +31,7 @@ class Dataset:
 
 class DatasetLoader:
     valid_datasets = ['20newsgroups', 'reuters21578', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['hashing', 'tfidf', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
+    valid_vectorizers = ['tfchi2', 'tfgr', 'tfig', 'tfrf', 'bm25', 'tfidf', 'hashing', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
@@ -38,6 +43,7 @@ class DatasetLoader:
         self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
+        self.cat_vec_dic = dict()
         if dataset == '20newsgroups':
             self.devel = self.fetch_20newsgroups(subset='train')
             self.test  = self.fetch_20newsgroups(subset='test')
@@ -61,7 +67,7 @@ class DatasetLoader:
         self.epoch = 0
         self.offset = 0
         self.positive_cat = positive_cat
-        self.devel_vec, self.test_vec = self._vectorize_documents(vectorize)
+        self.devel_vec, self.test_vec = self._vectorize_documents()
         self.devel_indexes = self._get_doc_indexes(self.devel_vec)
         self.test_indexes  = self._get_doc_indexes(self.test_vec)
         if self.rep_mode=='dense':
@@ -79,7 +85,7 @@ class DatasetLoader:
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
             self.feature_selection(int(feat_sel*self.num_features()))
-        self.cat_vec_dic = dict()
+
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
     # In extremely imbalanced cases, the train set is guaranteed to have some positive examples
@@ -93,20 +99,21 @@ class DatasetLoader:
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
-        if self.classification == 'polarity': return
+        self.devel.target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
+        self.test.target = self.binarize_label_vector(self.test.target, self.classification, self.positive_cat)
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
-        def __binarize_codes_single_label(target, pos_code):
-            target[target == pos_code] = -1
-            target[target != -1] = 0
-            target[target == -1] = 1
-        def __binarize_codes_multi_label(target, pos_code):
-            return np.array([(1 if pos_code in labels else 0) for labels in target])
-        if self.classification == 'single-label':
-            __binarize_codes_single_label(self.devel.target, self.positive_cat)
-            __binarize_codes_single_label(self.test.target,  self.positive_cat)
-        elif self.classification == 'multi-label':
-            self.devel.target = __binarize_codes_multi_label(self.devel.target, self.positive_cat)
-            self.test.target = __binarize_codes_multi_label(self.test.target, self.positive_cat)
+        self.classification = 'binary' #informs that the category codes have been set to 0 for negative and 1 for positive
+        self.cat_vec_dic = dict()
+
+    def binarize_label_vector(self, labels, classification_type, pos_code=1):
+        if classification_type in ['single-label']:
+            return np.array([(1 if pos_code == label_code else 0) for label_code in labels])
+        elif classification_type=='multi-label':
+            return np.array([(1 if pos_code in doc_labels else 0) for doc_labels in labels])
+        elif classification_type in ['binary', 'polarity']:
+            return labels #nothing to do
+        else:
+            err_exit(err_msg='Error while binarizing category codes: unexpected classification type.')
 
     def feature_selection(self, feat_sel):
         if self.vectorize == 'hashing':
@@ -135,27 +142,39 @@ class DatasetLoader:
     def test_class_prevalence(self, cat_label=1):
         return self.__prevalence(self.devel.target[self.test_indexes], cat_label)
 
-    def _vectorize_documents(self, vectorize):
-        if vectorize == 'hashing':
+    def _vectorize_documents(self):
+        self.weight_getter = self._get_weights #default getter
+        if self.vectorize == 'hashing':
             vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
             self.weight_getter = self._get_none
-        elif vectorize == 'tfidf':
+        elif self.vectorize == 'tfidf':
             vectorizer = TfidfVectorizer(stop_words='english')
-            self.weight_getter = self._get_weights
-        elif vectorize == 'sublinear_tfidf':
+        elif self.vectorize == 'sublinear_tfidf':
             vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
-            self.weight_getter = self._get_weights
-        elif vectorize == 'sublinear_tf':
+        elif self.vectorize in ['tfig', 'tfgr', 'tfchi2', 'tfrf']:
+            binary_target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
+            if self.vectorize == 'tfig':
+                vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True)
+            elif self.vectorize == 'tfchi2':
+                vectorizer = TftsrVectorizer(binary_target, chisquare, stop_words='english', sublinear_tf=True)
+            elif self.vectorize == 'tfgr':
+                vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True)
+            elif self.vectorize == 'tfrf':
+                vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True)
+        elif self.vectorize == 'sublinear_tf':
             vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False)
-            self.weight_getter = self._get_weights
-        elif vectorize == 'count':
+        elif self.vectorize == 'bm25':
+            vectorizer = BM25(stop_words='english')
+        elif self.vectorize == 'count':
             vectorizer = CountVectorizer(stop_words='english')
-            self.weight_getter = self._get_weights
-        else: #binary
+        elif self.vectorize == 'binary':
             vectorizer = CountVectorizer(stop_words='english', binary=True)
             self.weight_getter = self._get_none
+
+        tini=time.time()
         devel_vec = vectorizer.fit_transform(self.devel.data)
         test_vec = vectorizer.transform(self.test.data)
+        print("Vectorizer took %ds" % (time.time()-tini))
         #sorting the indexes simplifies the creation of sparse tensors a lot
         devel_vec.sort_indices()
         test_vec.sort_indices()
@@ -229,20 +248,13 @@ class DatasetLoader:
     def test_batch(self):
         return self.get_test_set()
 
-    def feat_sup_statistics(self, feat_index, cat_label=1):
-        feat_vec = self.devel_vec[:,feat_index]
+    def feature_label_contingency_table(self, feat_index, cat_label=1):
+        feat_vec = self.devel_vec[:,feat_index] #TODO: cache also the feature-vectors
         if cat_label not in self.cat_vec_dic:
-            self.cat_vec_dic[cat_label] = [(1 if x==cat_label else 0) for x in self.devel.target]
-        cat_vec  = self.cat_vec_dic[cat_label]
-        tp, tn, fp, fn = 0, 0, 0, 0
-        for i in range(len(feat_vec)):
-            if feat_vec[i]>0:
-                if cat_vec[i] > 0: tp += 1
-                else: fp += 1
-            else:
-                if cat_vec[i] > 0: fn += 1
-                else: tn += 1
-        return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
+            binary_target = self.binarize_label_vector(self.devel.target, self.classification, cat_label)
+            self.cat_vec_dic[cat_label] = set([i for i, label in enumerate(binary_target) if label == 1])
+        feat_doc_set = set(feat_vec.nonzero()[0])
+        return feature_label_contingency_table(self.cat_vec_dic[cat_label], feat_doc_set, self.num_devel_docs())
 
     def num_devel_docs(self):
         return len(self.devel_indexes)
