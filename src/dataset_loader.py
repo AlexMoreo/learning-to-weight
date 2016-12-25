@@ -31,7 +31,7 @@ class Dataset:
 
 class DatasetLoader:
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['tfchi2', 'tfgr', 'tfig', 'tfrf', 'bm25', 'tfidf', 'hashing', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
+    valid_vectorizers = ['count', 'binary', 'tfidf', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfgr', 'tfig', 'tfrf', 'bm25']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
@@ -144,7 +144,7 @@ class DatasetLoader:
         return self.__prevalence(self.devel.target[self.valid_indexes], cat_label)
 
     def test_class_prevalence(self, cat_label=1):
-        return self.__prevalence(self.devel.target[self.test_indexes], cat_label)
+        return self.__prevalence(self.test.target[self.test_indexes], cat_label)
 
     def _vectorize_documents(self):
         self.weight_getter = self._get_weights #default getter
