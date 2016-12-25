@@ -30,10 +30,10 @@ class Dataset:
         self.target_names = target_names
 
 class DatasetLoader:
-    valid_datasets = ['20newsgroups', 'reuters21578', 'movie_reviews', 'sentence_polarity', 'imdb']
+    valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
     valid_vectorizers = ['tfchi2', 'tfgr', 'tfig', 'tfrf', 'bm25', 'tfidf', 'hashing', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
-    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
+    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
@@ -51,6 +51,10 @@ class DatasetLoader:
         elif dataset == 'reuters21578':
             self.devel = self.fetch_reuters21579(subset='train')
             self.test  = self.fetch_reuters21579(subset='test')
+            self.classification = 'multi-label'
+        elif dataset == 'ohsumed':
+            self.devel = self.fetch_ohsumed20k(subset='train')
+            self.test = self.fetch_ohsumed20k(subset='test')
             self.classification = 'multi-label'
         elif dataset == 'movie_reviews':
             self.devel = self.fetch_movie_reviews(subset='train')
@@ -319,6 +323,47 @@ class DatasetLoader:
         data = [(u'{title}\n{body}\n{unproc}'.format(**doc), doc['topics']) for doc in requested_subset['documents']]
         text_data, topics = zip(*data)
         return Dataset(data=text_data, target=topics, target_names=requested_subset['categories'])
+
+    def fetch_ohsumed20k(self, data_path=None, subset='train'):
+        _dataname = 'ohsumed_20k'
+        if data_path is None:
+            data_path = join(os.path.expanduser('~'), _dataname)
+        create_if_not_exists(data_path)
+
+        pickle_file = join(data_path, _dataname + '.' + subset + '.pickle')
+        if not os.path.exists(pickle_file):
+            DOWNLOAD_URL = ('http://disi.unitn.it/moschitti/corpora/ohsumed-first-20000-docs.tar.gz')
+            archive_path = os.path.join(data_path, 'ohsumed-first-20000-docs.tar.gz')
+            if not os.path.exists(archive_path):
+                print("downloading file...")
+                urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path)
+            print("untarring ohsumed...")
+            tarfile.open(archive_path, 'r:gz').extractall(data_path)
+            untardir = 'ohsumed-first-20000-docs'
+
+            target_names = []
+            splitdata = dict({'training': set(), 'test': set()})
+            classification = dict()
+            content = dict()
+            for split in ['training', 'test']:
+                for cat_id in os.listdir(join(data_path, untardir, split)):
+                    if cat_id not in target_names: target_names.append(cat_id)
+                    for doc_id in os.listdir(join(data_path, untardir, split, cat_id)):
+                        text_content = open(join(data_path, untardir, split, cat_id, doc_id), 'r').read()
+                        if doc_id not in classification: classification[doc_id] = []
+                        splitdata[split].add(doc_id)
+                        classification[doc_id].append(cat_id)
+                        if doc_id not in content: content[doc_id] = text_content
+                target_names.sort()
+                dataset = Dataset([], [], target_names)
+                for doc_id in splitdata[split]:
+                    dataset.data.append(content[doc_id])
+                    dataset.target.append([target_names.index(cat_id) for cat_id in classification[doc_id]])
+                splitname = 'train' if split == 'training' else 'test'
+                pickle.dump(dataset, open(join(data_path, _dataname + '.' + splitname + '.pickle'), 'wb'),
+                            protocol=pickle.HIGHEST_PROTOCOL)
+
+        return pickle.load(open(pickle_file, 'rb'))
 
     def __distribute_evenly(self, pos_docs, neg_docs, target_names):
         data = pos_docs + neg_docs

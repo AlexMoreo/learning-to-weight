@@ -148,12 +148,21 @@ def shuffle_tied(l1, l2, random_seed=None):
     return list(l1_), list(l2_)
 
 def evaluation_metrics(predictions, true_labels):
-    if sum(true_labels)==0 and sum(predictions == 0):
-        return 1.0, 1.0, 1.0, 1.0
+    no_test_examples = (sum(true_labels) == 0)
+    no_predictions = (sum(predictions) == 0)
     acc = accuracy_score(true_labels, predictions)
-    f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
-    p = precision_score(true_labels, predictions, average='binary', pos_label=1)
-    r = recall_score(true_labels, predictions, average='binary', pos_label=1)
+    if no_test_examples and no_predictions:
+        f1 = 1.0
+    else:
+        f1 = f1_score(true_labels, predictions, average='binary', pos_label=1)
+    if no_predictions:
+        p = 1.0
+    else:
+        p = precision_score(true_labels, predictions, average='binary', pos_label=1)
+    if no_test_examples:
+        r=1.0
+    else:
+        r = recall_score(true_labels, predictions, average='binary', pos_label=1)
     return acc, f1, p, r
 
 def contingency_table(predictions, true_labels):

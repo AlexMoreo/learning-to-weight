@@ -42,7 +42,7 @@ class BM25:
             for f in tf[d].nonzero()[0]:
                 tf[d, f] = self._score(tf[d, f], self.idf[f], self.k1, self.b, len_d, self.avgdl)
                 norm += (tf[d, f] * tf[d, f])
-            tf[d, :] /= math.sqrt(norm)
+            tf[d, :] /= math.sqrt(norm) if norm > 0 else 1
         return scipy.sparse.csr_matrix(tf)
 
     def _score(self, tfi, idfi, k1, b, len_d, avgdl):
