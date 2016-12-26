@@ -89,6 +89,9 @@ class DatasetLoader:
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
             self.feature_selection(int(feat_sel*self.num_features()))
+            if isinstance(self.vectorizer, TftsrVectorizer):
+                self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
+                self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
 
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
@@ -149,35 +152,35 @@ class DatasetLoader:
     def _vectorize_documents(self):
         self.weight_getter = self._get_weights #default getter
         if self.vectorize == 'hashing':
-            vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
+            self.vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
             self.weight_getter = self._get_none
         elif self.vectorize == 'tfidf':
-            vectorizer = TfidfVectorizer(stop_words='english')
+            self.vectorizer = TfidfVectorizer(stop_words='english')
         elif self.vectorize == 'sublinear_tfidf':
-            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
+            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
         elif self.vectorize in ['tfig', 'tfgr', 'tfchi2', 'tfrf']:
             binary_target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
             if self.vectorize == 'tfig':
-                vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True)
             elif self.vectorize == 'tfchi2':
-                vectorizer = TftsrVectorizer(binary_target, chisquare, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, chisquare, stop_words='english', sublinear_tf=True)
             elif self.vectorize == 'tfgr':
-                vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True)
             elif self.vectorize == 'tfrf':
-                vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True)
         elif self.vectorize == 'sublinear_tf':
-            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False)
+            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False)
         elif self.vectorize == 'bm25':
-            vectorizer = BM25(stop_words='english')
+            self.vectorizer = BM25(stop_words='english')
         elif self.vectorize == 'count':
-            vectorizer = CountVectorizer(stop_words='english')
+            self.vectorizer = CountVectorizer(stop_words='english')
         elif self.vectorize == 'binary':
-            vectorizer = CountVectorizer(stop_words='english', binary=True)
+            self.vectorizer = CountVectorizer(stop_words='english', binary=True)
             self.weight_getter = self._get_none
 
         tini=time.time()
-        devel_vec = vectorizer.fit_transform(self.devel.data)
-        test_vec = vectorizer.transform(self.test.data)
+        devel_vec = self.vectorizer.fit_transform(self.devel.data)
+        test_vec = self.vectorizer.transform(self.test.data)
         print("Vectorizer took %ds" % (time.time()-tini))
         #sorting the indexes simplifies the creation of sparse tensors a lot
         devel_vec.sort_indices()

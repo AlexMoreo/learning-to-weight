@@ -58,22 +58,32 @@ class TftsrVectorizer:
         self.sublinear_tf = sublinear_tf
         self.tsr_function = tsr_function
         self.cat_doc_set = set([i for i, label in enumerate(binary_target) if label == 1])
+        self.supervised_info = None
 
     def fit_transform(self, raw_documents):
         self.vectorizer = TfidfVectorizer(stop_words=self.stop_words, sublinear_tf=self.sublinear_tf, use_idf=False)
         self.devel_vec = self.vectorizer.fit_transform(raw_documents)
-        return self.supervised_weighting(self.devel_vec)
+        return self.devel_vec
+        #print self.devel_vec.shape
+        #return self.supervised_weighting(self.devel_vec)
 
     def transform(self, raw_documents):
         if not hasattr(self, 'vectorizer'): raise NameError('TftsrVectorizer: transform method called before fit.')
         transformed = self.vectorizer.transform(raw_documents)
-        return self.supervised_weighting(transformed)
+        #return self.supervised_weighting(transformed)
+        return transformed
 
     def supervised_weighting(self, w):
-        sup = [self.feature_label_contingency_table(f) for f in range(w.shape[1])]
-        pc = sup[0].p_c()
-        feat_corr_info = np.array([self.tsr_function(sup_i.tpr(), sup_i.fpr(), pc) for sup_i in sup])
-        sup_w = w.multiply(feat_corr_info)
+        w = w.toarray()
+        #print 'getting sup vector'
+        if self.supervised_info is None:
+            sup = [self.feature_label_contingency_table(f) for f in range(w.shape[1])]
+            pc = sup[0].p_c()
+            #print 'getting feat corr vector'
+            self.supervised_info = np.array([self.tsr_function(sup_i.tpr(), sup_i.fpr(), pc) for sup_i in sup])
+        #print 'multiply'
+        sup_w = np.multiply(w, self.supervised_info)
+        #print 'normalize'
         sup_w = sklearn.preprocessing.normalize(sup_w, norm='l2', axis=1, copy=False)
         return scipy.sparse.csr_matrix(sup_w)
 
