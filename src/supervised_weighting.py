@@ -82,6 +82,11 @@ def main(argv=None):
             return tf.reshape(proj, [n_results])
 
         def full_tfidf(x_raw, info_arr):
+            h1_weights = tf.get_variable('h1_weights', [1+info_by_feat, 100], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
+            h1_biases = tf.get_variable('h1_biases', [100], initializer=tf.constant_initializer(0.0))
+            proj_weights = tf.get_variable('proj_weights', [100, 1],initializer=tf.random_normal_initializer(stddev=1.))
+            proj_biases = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
+
             info_arr_exp = tf.expand_dims(info_arr, 0)  # from shape [info_by_feat] to shape [1, info_by_feat]
             #print x_raw.get_shape().as_list()
             #n_rows, n_cols = x_raw.get_shape().as_list()[1]
@@ -90,8 +95,10 @@ def main(argv=None):
             feat_tf = tf.reshape(x_raw, [-1,1])
             feat_idf= tf.reshape(info_tiled, [-1,info_by_feat])
             feat_tfidf = tf.concat(1, [feat_tf, feat_idf])
-            ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
-            full_tfidf = add_linear_layer(ff,1)
+            #ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
+            #full_tfidf = add_linear_layer(ff, 1)
+            relu = tf.nn.dropout(tf.nn.relu(tf.matmul(feat_tfidf,h1_weights)+h1_biases), keep_prob=keep_p)
+            full_tfidf = tf.nn.relu(tf.matmul(relu, proj_weights) + proj_biases)
             x_weighted = tf.reshape(full_tfidf, [n_rows, x_size])
             print 'done'
             return x_weighted
