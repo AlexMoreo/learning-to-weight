@@ -143,13 +143,13 @@ def main(argv=None):
             logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
 
         #pre-learn the idf-like function as any feature selection function
-        if FLAGS.pretrain != 'off':
-            x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
-            y_func = tf.placeholder(tf.float32, shape=[None])
-            tf.get_variable_scope().reuse_variables()
-            idf_prediction = idf_like(x_func)
-            idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-            idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
+        #if FLAGS.pretrain != 'off':
+        x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
+        y_func = tf.placeholder(tf.float32, shape=[None])
+        tf.get_variable_scope().reuse_variables()
+        idf_prediction = idf_like(x_func)
+        idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
+        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
         #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
         loss_summary = tf.scalar_summary('loss/loss', loss)
