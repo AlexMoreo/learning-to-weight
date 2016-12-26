@@ -13,9 +13,7 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
-#TODO: ConfWeight (tf.GR?)
-#TODO: cambiar P=1 y R=1 if denominator is 0
-#TODO: repeat R0 in reuters, launch 20news and sentiment R0-9 with this batch configuration
+#TODO: ConfWeight
 #TODO: check out the separability index
 #TODO: add micro F1
 #TODO: add a new non-linear classifier
@@ -83,7 +81,25 @@ def main(argv=None):
             if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
             return tf.reshape(proj, [n_results])
 
-        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
+        def full_tfidf(x_raw, info_arr):
+            info_arr_exp = tf.expand_dims(info_arr, 0)  # from shape [info_by_feat] to shape [1, info_by_feat]
+            #print x_raw.get_shape().as_list()
+            #n_rows, n_cols = x_raw.get_shape().as_list()[1]
+            n_rows = tf.shape(x_raw)[0]
+            info_tiled = tf.tile(info_arr_exp, tf.pack([n_rows, 1]))
+            feat_tf = tf.reshape(x_raw, [-1,1])
+            feat_idf= tf.reshape(info_tiled, [-1,info_by_feat])
+            feat_tfidf = tf.concat(1, [feat_tf, feat_idf])
+            ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
+            full_tfidf = add_linear_layer(ff,1)
+            x_weighted = tf.reshape(full_tfidf, [n_rows, x_size])
+            print 'done'
+            return x_weighted
+
+        if FLAGS.computation == 'tfidflike':
+            weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
+        elif FLAGS.computation == 'full':
+            weighted_layer = full_tfidf(x, feat_info)
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         log_weights = tf.get_variable('log_weights', [data.num_features(), 1], initializer=tf.random_normal_initializer(stddev=.1))
         log_bias = tf.get_variable('log_biases', [1], initializer=tf.constant_initializer(0.0))
@@ -108,26 +124,28 @@ def main(argv=None):
             logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
 
         #pre-learn the idf-like function as any feature selection function
-        x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
-        y_func = tf.placeholder(tf.float32, shape=[None])
-        tf.get_variable_scope().reuse_variables()
-        idf_prediction = idf_like(x_func)
-        idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-        #idf_optimizer = tf.train.RMSPropOptimizer(learning_rate=0.0001).minimize(idf_loss) #0.0001
-        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
+        if FLAGS.pretrain != 'off':
+            x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
+            y_func = tf.placeholder(tf.float32, shape=[None])
+            tf.get_variable_scope().reuse_variables()
+            idf_prediction = idf_like(x_func)
+            idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
+            idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
+        #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
         loss_summary = tf.scalar_summary('loss/loss', loss)
-        idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
         log_weight_sum = variable_summaries(log_weights, 'logistic/weight', 'weights')
         log_bias_sum = variable_summaries(log_bias, 'logistic/bias', 'bias')
-        idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
-        idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
-        idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
-        idf_projbias_sum = variable_summaries(tf.get_variable('proj_bias'), 'idf/proj/bias', 'projbias')
-        idf_summaries = tf.merge_summary([idfloss_summary, idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
+        #idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
+        #idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
+        #idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
+        #idf_projbias_sum = variable_summaries(tf.get_variable('proj_bias'), 'idf/proj/bias', 'projbias')
+        #idf_summaries = tf.merge_summary([idfloss_summary, idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
         log_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum])
         end2end_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum,
-                                      idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
+                                      #idf_weight_sum, idf_bias_sum,
+                                            #idf_projweight_sum, idf_projbias_sum
+                                             ])
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -329,6 +347,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
+    flags.DEFINE_string('computation', 'tfidflike', 'Computation mode, see documentation (default tfidflike)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
                                             '\n show: shows the plot during training'
@@ -345,9 +364,12 @@ if __name__ == '__main__':
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
+    err_param_range('computation', FLAGS.computation, ['tfidflike','full'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
+    err_exit(FLAGS.computation=='full' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to full.')
+    err_exit(FLAGS.computation == 'full' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to full.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
