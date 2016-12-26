@@ -82,31 +82,43 @@ def main(argv=None):
             return tf.reshape(proj, [n_results])
 
         def full_tfidf(x_raw, info_arr):
-            h1_weights = tf.get_variable('h1_weights', [1+info_by_feat, 100], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
-            h1_biases = tf.get_variable('h1_biases', [100], initializer=tf.constant_initializer(0.0))
-            proj_weights = tf.get_variable('proj_weights', [100, 1],initializer=tf.random_normal_initializer(stddev=1.))
+            filter_weights = tf.get_variable('full_weights', [1+info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
+            filter_biases = tf.get_variable('full_biases', [FLAGS.hidden], initializer=tf.constant_initializer(0.0))
+            proj_weights = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
             proj_biases = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
 
             info_arr_exp = tf.expand_dims(info_arr, 0)  # from shape [info_by_feat] to shape [1, info_by_feat]
-            #print x_raw.get_shape().as_list()
-            #n_rows, n_cols = x_raw.get_shape().as_list()[1]
             n_rows = tf.shape(x_raw)[0]
             info_tiled = tf.tile(info_arr_exp, tf.pack([n_rows, 1]))
             feat_tf = tf.reshape(x_raw, [-1,1])
             feat_idf= tf.reshape(info_tiled, [-1,info_by_feat])
             feat_tfidf = tf.concat(1, [feat_tf, feat_idf])
+            x_tfidf = tf.reshape(feat_tfidf, [n_rows,x_size*(info_by_feat+1), 1]) #shape=[rows, cols=(infobyfeat+1)xfeat, channels=1]
+            print 'x_tfidf'
+            print x_tfidf.get_shape()
+            conv = tf.nn.conv1d(x_tfidf, filters=filter_weights, stride=1+info_by_feat, padding='VALID')
+            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
+            print 'relu'
+            print relu.get_shape()
+            reshape = tf.reshape(relu, [-1, FLAGS.hidden])
+            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
+            if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
+            return tf.reshape(proj, [n_rows,-1])
+
             #ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
             #full_tfidf = add_linear_layer(ff, 1)
-            relu = tf.nn.dropout(tf.nn.relu(tf.matmul(feat_tfidf,h1_weights)+h1_biases), keep_prob=keep_p)
-            full_tfidf = tf.nn.relu(tf.matmul(relu, proj_weights) + proj_biases)
-            x_weighted = tf.reshape(full_tfidf, [n_rows, x_size])
-            print 'done'
-            return x_weighted
+            #relu = tf.nn.dropout(tf.nn.relu(tf.matmul(feat_tfidf,h1_weights)+h1_biases), keep_prob=keep_p)
+            #full_tfidf = tf.nn.relu(tf.matmul(relu, proj_weights) + proj_biases)
+            #x_weighted = tf.reshape(full_tfidf, [n_rows, x_size])
+            #print 'done'
+            #return x_weighted
 
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         elif FLAGS.computation == 'full':
             weighted_layer = full_tfidf(x, feat_info)
+
+        print weighted_layer.get_shape()
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         log_weights = tf.get_variable('log_weights', [data.num_features(), 1], initializer=tf.random_normal_initializer(stddev=.1))
         log_bias = tf.get_variable('log_biases', [1], initializer=tf.constant_initializer(0.0))
