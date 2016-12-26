@@ -31,7 +31,7 @@ class Dataset:
 
 class DatasetLoader:
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['count', 'binary', 'tfidf', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfgr', 'tfig', 'tfrf', 'bm25']
+    valid_vectorizers = ['tfgr', 'count', 'binary', 'tfidf', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfig', 'tfrf', 'bm25']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
@@ -53,8 +53,8 @@ class DatasetLoader:
             self.test  = self.fetch_reuters21579(subset='test')
             self.classification = 'multi-label'
         elif dataset == 'ohsumed':
-            self.devel = self.fetch_ohsumed20k(subset='train')
-            self.test = self.fetch_ohsumed20k(subset='test')
+            self.devel = self.fetch_ohsumed50k(subset='train')
+            self.test = self.fetch_ohsumed50k(subset='test')
             self.classification = 'multi-label'
         elif dataset == 'movie_reviews':
             self.devel = self.fetch_movie_reviews(subset='train')
@@ -364,6 +364,53 @@ class DatasetLoader:
                             protocol=pickle.HIGHEST_PROTOCOL)
 
         return pickle.load(open(pickle_file, 'rb'))
+
+    def fetch_ohsumed50k(self, data_path=None, subset='train', train_test_split=0.7):
+        _dataname = 'ohsumed_50k'
+        if data_path is None:
+            data_path = join(os.path.expanduser('~'), _dataname)
+        create_if_not_exists(data_path)
+
+        pickle_file = join(data_path, _dataname + '.' + subset + str(train_test_split) + '.pickle')
+        if not os.path.exists(pickle_file):
+            DOWNLOAD_URL = ('http://disi.unitn.it/moschitti/corpora/ohsumed-all-docs.tar.gz')
+            archive_path = os.path.join(data_path, 'ohsumed-all-docs.tar.gz')
+            if not os.path.exists(archive_path):
+                print("downloading file...")
+                urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path)
+            print("untarring ohsumed...")
+            tarfile.open(archive_path, 'r:gz').extractall(data_path)
+            untardir = 'ohsumed-all'
+
+            target_names = []
+            doc_classes = dict()
+            class_docs = dict()
+            content = dict()
+            for cat_id in os.listdir(join(data_path, untardir)):
+                target_names.append(cat_id)
+                class_docs[cat_id] = []
+                for doc_id in os.listdir(join(data_path, untardir, cat_id)):
+                    text_content = open(join(data_path, untardir, cat_id, doc_id), 'r').read()
+                    if doc_id not in doc_classes: doc_classes[doc_id] = []
+                    doc_classes[doc_id].append(cat_id)
+                    if doc_id not in content: content[doc_id] = text_content
+                    class_docs[cat_id].append(doc_id)
+            target_names.sort()
+            splitdata = dict({'train':[], 'test':[]})
+            for cat_id in target_names:
+                split_point = int(math.floor(len(class_docs[cat_id])*train_test_split))
+                splitdata['train'].extend(class_docs[cat_id][:split_point])
+                splitdata['test'].extend(class_docs[cat_id][split_point:])
+            for split in ['train', 'test']:
+                dataset = Dataset([], [], target_names)
+                for doc_id in splitdata[split]:
+                    dataset.data.append(content[doc_id])
+                    dataset.target.append([target_names.index(cat_id) for cat_id in doc_classes[doc_id]])
+                pickle.dump(dataset, open(join(data_path, _dataname + '.' + split + str(train_test_split) + '.pickle'), 'wb'),
+                            protocol=pickle.HIGHEST_PROTOCOL)
+
+        return pickle.load(open(pickle_file, 'rb'))
+
 
     def __distribute_evenly(self, pos_docs, neg_docs, target_names):
         data = pos_docs + neg_docs
