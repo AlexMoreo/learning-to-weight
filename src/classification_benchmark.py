@@ -44,7 +44,7 @@ def linear_svm(data, results):
         results.set_all(data.get_learning_parameters())
 
     if best_f1 is not None:
-        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual']).fit(deX, deY)
@@ -94,7 +94,7 @@ def random_forest(data, results):
         results.set_all(data.get_learning_parameters())
 
     if best_f1 is not None:
-        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         rf_ = RandomForestClassifier(n_estimators=best_params['n_estimators'],
@@ -139,7 +139,7 @@ def multinomial_nb(data, results):
         results.set_all(data.get_learning_parameters())
 
     if best_f1 is not None:
-        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
@@ -181,7 +181,7 @@ def logistic_regression(data, results):
         results.set_all(data.get_learning_parameters())
 
     if best_f1 is not None:
-        print('Best params %s: f-score %f' % (str(best_params), best_f1))
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         lr_ = LogisticRegression(C=best_params['C'], penalty=best_params['penalty'], dual=best_params['dual']).fit(deX, deY)
