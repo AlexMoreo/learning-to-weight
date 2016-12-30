@@ -31,13 +31,13 @@ def linear_svm(data, results):
                     svm_ = svm.LinearSVC(C=c, loss=l, dual=d).fit(trX, trY)
                     vaY_ = svm_.predict(vaX)
                     _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                    print('Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
+                    #print('Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
                     if best_f1 is None or f1 > best_f1:
                         best_f1 = f1
                         best_params = {'C':c, 'loss':l, 'dual':d}
-                        #print('\rTrain SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end='')
+                        print('\rTrain SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end='')
                 except ValueError:
-                    print('Param configuration not supported, skip')
+                    pass #print('Param configuration not supported, skip')
 
     results.init_row_result('LinearSVM', data)
     if isinstance(data, WeightedVectors):
@@ -79,13 +79,15 @@ def random_forest(data, results):
                             criterion=criterion, max_features=max_features, class_weight=class_weight, n_jobs=-1).fit(trX, trY)
                         vaY_ = rf_.predict(vaX)
                         _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                        print('Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
-                              (n_estimators, criterion, max_features, class_weight, f1))
+                        #print('Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                        #      (n_estimators, criterion, max_features, class_weight, f1))
                         if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'n_estimators':n_estimators, 'criterion':criterion, 'max_features':max_features, 'class_weight':class_weight}
+                            print('\rTrain Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                              (n_estimators, criterion, max_features, class_weight, f1), end='')
                     except ValueError:
-                        print('Param configuration not supported, skip')
+                        pass #print('Param configuration not supported, skip')
 
     results.init_row_result('RandomForest', data)
     if isinstance(data, WeightedVectors):
@@ -166,12 +168,13 @@ def logistic_regression(data, results):
                     lr_ = LogisticRegression(C=c, penalty=l, dual=d, n_jobs=-1).fit(trX, trY)
                     vaY_ = lr_.predict(vaX)
                     _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                    print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
+                    #print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
                     if best_f1 is None or f1 > best_f1:
                         best_f1 = f1
                         best_params = {'C':c, 'penalty':l, 'dual':d}
+                        print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end="")
                 except ValueError:
-                    print('Param configuration not supported, skip')
+                    pass #print('Param configuration not supported, skip')
 
     results.init_row_result('LogisticRegression', data)
     if isinstance(data, WeightedVectors):
