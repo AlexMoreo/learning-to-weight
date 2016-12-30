@@ -238,6 +238,7 @@ class DatasetLoader:
         return self.__get_set(self.test_vec, self.test.target, self.test_indexes)
 
     def train_batch(self, batch_size=64):
+        if self.offset == 0 and self.epoch == 0: random.shuffle(self.train_indexes)
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
         batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]
         batch_rep = self._batch_getter(batch)

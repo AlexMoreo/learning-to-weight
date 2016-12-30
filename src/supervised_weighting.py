@@ -13,6 +13,9 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
+#TODO: check if it has converged
+#TODO: add information to sup_info
+#TODO: check without sigmoid, and with relu
 #TODO: ConfWeight
 #TODO: check out the separability index
 #TODO: add micro F1
@@ -79,6 +82,7 @@ def main(argv=None):
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
+            else: proj = tf.nn.tanh(proj)
             return tf.reshape(proj, [n_results])
 
         def full_tfidf(x_raw, info_arr):
