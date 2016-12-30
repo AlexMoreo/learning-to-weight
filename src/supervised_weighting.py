@@ -223,8 +223,8 @@ def main(argv=None):
                 idf_steps += 1
 
                 if step % show_step == 0:
-                    sum = idf_summaries.eval({x_func: x_, y_func: y_, keep_p:drop_keep_p})
-                    tensorboard.add_train_summary(sum, step)
+                    #sum = idf_summaries.eval({x_func: x_, y_func: y_, keep_p:drop_keep_p})
+                    #tensorboard.add_train_summary(sum, step)
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
                     if l_ave < epsilon:
