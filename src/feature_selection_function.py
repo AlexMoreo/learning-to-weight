@@ -73,7 +73,7 @@ class ContTable:
 
     def p_not_f(self): return 1.0-self.p_f()
 
-    def p_tp(self): return (1.0*self.tp)/self.get_d()
+    def p_tp(self): return (1.0*self.tp) / self.get_d()
 
     def p_tn(self): return (1.0*self.tn) / self.get_d()
 
