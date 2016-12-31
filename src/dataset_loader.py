@@ -382,24 +382,30 @@ class DatasetLoader:
             if not os.path.exists(archive_path):
                 print("downloading file...")
                 urllib.request.urlretrieve(DOWNLOAD_URL, filename=archive_path)
-            print("untarring ohsumed...")
-            tarfile.open(archive_path, 'r:gz').extractall(data_path)
             untardir = 'ohsumed-all'
+            if not os.path.exists(os.path.join(data_path, untardir)):
+                print("untarring ohsumed...")
+                tarfile.open(archive_path, 'r:gz').extractall(data_path)
+
 
             target_names = []
             doc_classes = dict()
             class_docs = dict()
             content = dict()
+            doc_ids = set()
             for cat_id in os.listdir(join(data_path, untardir)):
                 target_names.append(cat_id)
                 class_docs[cat_id] = []
                 for doc_id in os.listdir(join(data_path, untardir, cat_id)):
+                    doc_ids.add(doc_id)
                     text_content = open(join(data_path, untardir, cat_id, doc_id), 'r').read()
                     if doc_id not in doc_classes: doc_classes[doc_id] = []
                     doc_classes[doc_id].append(cat_id)
                     if doc_id not in content: content[doc_id] = text_content
                     class_docs[cat_id].append(doc_id)
             target_names.sort()
+            print('Read %d different documents' % len(doc_ids))
+
             splitdata = dict({'train':[], 'test':[]})
             for cat_id in target_names:
                 free_docs = [d for d in class_docs[cat_id] if (d not in splitdata['train'] and d not in splitdata['test'])]

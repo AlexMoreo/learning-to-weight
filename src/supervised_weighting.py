@@ -38,7 +38,7 @@ def main(argv=None):
 
     print('Getting supervised correlations')
     sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
-    feat_corr_info = [[sup_i.tpr(), sup_i.fpr(), sup_i.p_f()] for sup_i in sup]
+    feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
 
     #feat_corr_info = np.concatenate([[sup_i.p_tp(), sup_i.p_fp(), sup_i.p_fn(), sup_i.p_tn()] for sup_i in sup])
     info_by_feat = len(feat_corr_info[0])
@@ -326,9 +326,10 @@ def main(argv=None):
                           'optimizer': FLAGS.optimizer,
                           'normalize': FLAGS.normalize,
                           'nonnegative': FLAGS.forcepos,
+                          'linidf': FLAGS.linidf,
                           'pretrain': FLAGS.pretrain,
                           'iterations': idf_steps + log_steps,
-                          'notes': FLAGS.notes + ('(linidf=%s)' % FLAGS.linidf) + ('(val_f1%.4f)' % best_f1),
+                          'notes': FLAGS.notes + ('(val_f1%.4f)' % best_f1),
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor

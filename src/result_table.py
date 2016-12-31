@@ -25,6 +25,7 @@ class ReusltTable:
                                        'optimizer',
                                        'normalize',
                                        'nonnegative',
+                                       'linidf',
                                        'pretrain',
                                        'iterations',
                                        'notes',
