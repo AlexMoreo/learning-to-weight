@@ -101,12 +101,8 @@ def main(argv=None):
             feat_idf= tf.reshape(info_tiled, [-1,info_by_feat])
             feat_tfidf = tf.concat(1, [feat_tf, feat_idf])
             x_tfidf = tf.reshape(feat_tfidf, [n_rows,x_size*(info_by_feat+1), 1]) #shape=[rows, cols=(infobyfeat+1)xfeat, channels=1]
-            print 'x_tfidf'
-            print x_tfidf.get_shape()
             conv = tf.nn.conv1d(x_tfidf, filters=filter_weights, stride=1+info_by_feat, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
-            print 'relu'
-            print relu.get_shape()
             reshape = tf.reshape(relu, [-1, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             if FLAGS.forcepos:
@@ -161,9 +157,10 @@ def main(argv=None):
         x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
         y_func = tf.placeholder(tf.float32, shape=[None])
         tf.get_variable_scope().reuse_variables()
-        idf_prediction = idf_like(x_func)
-        idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-        idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
+        if FLAGS.computation == 'tfidflike':
+            idf_prediction = idf_like(x_func)
+            idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
+            idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
         #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
         loss_summary = tf.scalar_summary('loss/loss', loss)
