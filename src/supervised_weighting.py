@@ -357,9 +357,9 @@ def main(argv=None):
                              run_params_dic=run_params_dic)
         outname=FLAGS.outname
         if not outname:
-            outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
+            outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_L%s_P%s_R%d.pickle' % \
                       (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
-                       FLAGS.normalize,FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
+                       FLAGS.normalize,FLAGS.forcepos, FLAGS.linidf, FLAGS.pretrain, FLAGS.run)
         wv.pickle(FLAGS.outdir, outname)
         print 'Weighted vectors saved at '+outname
 
