@@ -12,7 +12,7 @@ from sklearn.externals.six.moves import urllib
 from helpers import *
 import numpy as np
 from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import chi2
+from sklearn.feature_selection import chi2, mutual_info_classif
 from feature_selection_function import ContTable
 from glob import glob
 import cPickle as pickle
@@ -88,7 +88,8 @@ class DatasetLoader:
             print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
-            self.feature_selection(int(feat_sel*self.num_features()))
+            if feat_sel is not None:
+                self.feature_selection(int(feat_sel*self.num_features()))
             if isinstance(self.vectorizer, TftsrVectorizer):
                 self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
                 self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
@@ -126,13 +127,11 @@ class DatasetLoader:
         if self.vectorize == 'hashing':
             print 'Warning: feature selection ommitted when hashing is activated'
             return
-        if feat_sel is not None:
+        if feat_sel is not None and feat_sel < self.devel_vec.shape[1]:
             print('Selecting %d most important features from %d features' % (feat_sel, self.num_features()))
-            err_exit(self.devel_vec.shape[0]!=len(self.devel.target), "debug: vector length")
             fs = SelectKBest(chi2, k=feat_sel)
             self.devel_vec = fs.fit_transform(self.devel_vec, self.devel.target)
             self.test_vec = fs.transform(self.test_vec)
-            print('Done')
 
     def __prevalence(self, inset, cat_label=1):
         return sum(1.0 for x in inset if x == cat_label) / len(inset)
@@ -150,32 +149,33 @@ class DatasetLoader:
         return self.__prevalence(self.test.target[self.test_indexes], cat_label)
 
     def _vectorize_documents(self):
+        min_df = 1
         self.weight_getter = self._get_weights #default getter
         if self.vectorize == 'hashing':
             self.vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
             self.weight_getter = self._get_none
         elif self.vectorize == 'tfidf':
-            self.vectorizer = TfidfVectorizer(stop_words='english')
+            self.vectorizer = TfidfVectorizer(stop_words='english', min_df=min_df)
         elif self.vectorize == 'sublinear_tfidf':
-            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True)
+            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, min_df=min_df)
         elif self.vectorize in ['tfig', 'tfgr', 'tfchi2', 'tfrf']:
             binary_target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
             if self.vectorize == 'tfig':
-                self.vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True, min_df=min_df)
             elif self.vectorize == 'tfchi2':
-                self.vectorizer = TftsrVectorizer(binary_target, chisquare, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, chisquare, stop_words='english', sublinear_tf=True, min_df=min_df)
             elif self.vectorize == 'tfgr':
-                self.vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True, min_df=min_df)
             elif self.vectorize == 'tfrf':
-                self.vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True)
+                self.vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True, min_df=min_df)
         elif self.vectorize == 'sublinear_tf':
-            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False)
+            self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False, min_df=min_df)
         elif self.vectorize == 'bm25':
-            self.vectorizer = BM25(stop_words='english')
+            self.vectorizer = BM25(stop_words='english', min_df=min_df)
         elif self.vectorize == 'count':
-            self.vectorizer = CountVectorizer(stop_words='english')
+            self.vectorizer = CountVectorizer(stop_words='english', min_df=min_df)
         elif self.vectorize == 'binary':
-            self.vectorizer = CountVectorizer(stop_words='english', binary=True)
+            self.vectorizer = CountVectorizer(stop_words='english', binary=True, min_df=min_df)
             self.weight_getter = self._get_none
 
         tini=time.time()
@@ -283,7 +283,7 @@ class DatasetLoader:
         return len(self.test_indexes)
 
     def get_categories(self):
-        return np.unique(self.devel.target_names)
+        return self.devel.target_names
 
     def fetch_20newsgroups(self, data_path=None, subset='train'):
         if data_path is None:
@@ -402,9 +402,11 @@ class DatasetLoader:
             target_names.sort()
             splitdata = dict({'train':[], 'test':[]})
             for cat_id in target_names:
-                split_point = int(math.floor(len(class_docs[cat_id])*train_test_split))
-                splitdata['train'].extend(class_docs[cat_id][:split_point])
-                splitdata['test'].extend(class_docs[cat_id][split_point:])
+                free_docs = [d for d in class_docs[cat_id] if (d not in splitdata['train'] and d not in splitdata['test'])]
+                if len(free_docs) > 0:
+                    split_point = int(math.floor(len(free_docs)*train_test_split))
+                    splitdata['train'].extend(free_docs[:split_point])
+                    splitdata['test'].extend(free_docs[split_point:])
             for split in ['train', 'test']:
                 dataset = Dataset([], [], target_names)
                 for doc_id in splitdata[split]:
@@ -452,6 +454,8 @@ class DatasetLoader:
 
             train, test = self.__process_posneg_dataset(pos_docs=documents['pos'], neg_docs=documents['neg'], train_test_split=train_test_split)
             self.__pickle_dataset(train, test, data_path,_dataname,_posfix)
+
+            #debug esto
 
             return train if subset == 'train' else test
         else:

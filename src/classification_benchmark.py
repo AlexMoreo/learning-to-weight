@@ -50,7 +50,7 @@ def linear_svm(data, results):
         svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual']).fit(deX, deY)
         teY_ = svm_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
@@ -104,7 +104,7 @@ def random_forest(data, results):
                                      n_jobs=-1).fit(deX, deY)
         teY_ = rf_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f\n' % (acc, f1, prec, rec))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY), init_time,
                                          notes=str(best_params))
@@ -145,7 +145,7 @@ def multinomial_nb(data, results):
         nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
         teY_ = nb_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, prec, rec))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f\n' % (acc, f1, prec, rec))
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
                                          notes=str(best_params))
@@ -187,7 +187,7 @@ def logistic_regression(data, results):
         lr_ = LogisticRegression(C=best_params['C'], penalty=best_params['penalty'], dual=best_params['dual']).fit(deX, deY)
         teY_ = lr_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
@@ -215,6 +215,7 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=DatasetLoader.valid_datasets)
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
+    parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
     parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
     parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
     parser.add_argument("--no-randomforest", help="removes the randomforest classifier from the benchmark", default=False, action="store_true")
@@ -232,7 +233,7 @@ if __name__ == '__main__':
     if args.dataset:
         print("Runing classification benchmark on baselines")
         print("Dataset: " + args.dataset)
-        feat_sel = 0.1
+        feat_sel = args.fs
         for vectorizer in DatasetLoader.valid_vectorizers:
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))

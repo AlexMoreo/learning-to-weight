@@ -8,13 +8,14 @@ from feature_selection_function import *
 
 class BM25:
 
-    def __init__(self, k1=1.2, b=0.75, stop_words=None):
+    def __init__(self, k1=1.2, b=0.75, stop_words=None, min_df=1):
         self.k1 = k1
         self.b = b
         self.stop_words = stop_words
+        self.min_df = min_df
 
     def fit(self, raw_documents):
-        self.vectorizer = CountVectorizer(stop_words=self.stop_words)
+        self.vectorizer = CountVectorizer(stop_words=self.stop_words, min_df=self.min_df)
         tf = self.vectorizer.fit_transform(raw_documents).asfptype().toarray()
         self.nD = tf.shape[0]
         self.avgdl = []
@@ -53,15 +54,16 @@ class BM25:
 
 
 class TftsrVectorizer:
-    def __init__(self, binary_target, tsr_function, stop_words='english', sublinear_tf=False):
+    def __init__(self, binary_target, tsr_function, stop_words='english', sublinear_tf=False, min_df=1):
         self.stop_words = stop_words
         self.sublinear_tf = sublinear_tf
         self.tsr_function = tsr_function
         self.cat_doc_set = set([i for i, label in enumerate(binary_target) if label == 1])
         self.supervised_info = None
+        self.min_df = min_df
 
     def fit_transform(self, raw_documents):
-        self.vectorizer = TfidfVectorizer(stop_words=self.stop_words, sublinear_tf=self.sublinear_tf, use_idf=False)
+        self.vectorizer = TfidfVectorizer(stop_words=self.stop_words, sublinear_tf=self.sublinear_tf, use_idf=False, min_df=self.min_df)
         self.devel_vec = self.vectorizer.fit_transform(raw_documents)
         return self.devel_vec
         #print self.devel_vec.shape

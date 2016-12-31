@@ -13,15 +13,12 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
-#TODO: check if it has converged
-#TODO: add information to sup_info
+#TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
 #TODO: check without sigmoid, and with relu
 #TODO: ConfWeight
 #TODO: check out the separability index
-#TODO: add micro F1
 #TODO: add a new non-linear classifier
 #TODO: parallelize supervised info vector
-#TODO: convolution on the supervised feat-cat statistics + freq (L1)
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
@@ -81,8 +78,14 @@ def main(argv=None):
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
-            else: proj = tf.nn.tanh(proj)
+            if FLAGS.forcepos:
+                if FLAGS.linidf:
+                    proj = tf.nn.relu(proj)
+                else:
+                    proj = tf.nn.sigmoid(proj)
+            else:
+                if not FLAGS.linidf:
+                    proj = tf.nn.tanh(proj)
             return tf.reshape(proj, [n_results])
 
         def full_tfidf(x_raw, info_arr):
@@ -106,7 +109,14 @@ def main(argv=None):
             print relu.get_shape()
             reshape = tf.reshape(relu, [-1, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            if FLAGS.forcepos: proj = tf.nn.sigmoid(proj)
+            if FLAGS.forcepos:
+                if FLAGS.linidf:
+                    proj = tf.nn.relu(proj)
+                else:
+                    proj = tf.nn.sigmoid(proj)
+            else:
+                if not FLAGS.linidf:
+                    proj = tf.nn.tanh(proj)
             return tf.reshape(proj, [n_rows,-1])
 
             #ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
@@ -120,7 +130,7 @@ def main(argv=None):
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         elif FLAGS.computation == 'full':
-            weighted_layer = full_tfidf(x, feat_info)
+            weighted_layer = tf.mul(tf_like(x), full_tfidf(x, feat_info))
 
         print weighted_layer.get_shape()
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
@@ -268,7 +278,7 @@ def main(argv=None):
                 predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
                 tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                improves = (f1>0.0 and f1 > best_f1)
+                improves = f1 > best_f1
                 best_f1 = max(best_f1, f1)
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
@@ -370,6 +380,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
     flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
+    flags.DEFINE_boolean('linidf', True, 'Applies a non-linear function to the output of the idf-like part (default True)')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
     flags.DEFINE_string('computation', 'tfidflike', 'Computation mode, see documentation (default tfidflike)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
