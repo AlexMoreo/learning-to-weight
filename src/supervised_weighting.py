@@ -327,7 +327,7 @@ def main(argv=None):
                           'nonnegative': FLAGS.forcepos,
                           'pretrain': FLAGS.pretrain,
                           'iterations': idf_steps + log_steps,
-                          'notes': FLAGS.notes + ('(val_f1%.4f)' % best_f1),
+                          'notes': FLAGS.notes + ('(linidf=%s)' % FLAGS.linidf) + ('(val_f1%.4f)' % best_f1),
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor
