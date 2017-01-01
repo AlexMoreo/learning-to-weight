@@ -124,14 +124,18 @@ def multinomial_nb(data, results):
             positives = len(values[values>0])
             return negatives > positives
         def swap_sign(csr_m):
-            swapped = csr_m.multiply(-1)
+            return csr_m.multiply(-1)
+        def del_negatives(swapped):
             swapped[swapped<0]=0
             swapped.eliminate_zeros()
             return swapped
-        if mainly_negative_nonzeros(data.trX) and mainly_negative_nonzeros(data.vaX) and mainly_negative_nonzeros(data.teX):
+        if mainly_negative_nonzeros(data.trX):
             data.trX = swap_sign(data.trX)
             data.vaX = swap_sign(data.vaX)
             data.teX = swap_sign(data.teX)
+        data.trX = del_negatives(data.trX)
+        data.vaX = del_negatives(data.vaX)
+        data.teX = del_negatives(data.teX)
 
     #if all vectors are non-positive, swaps their sign -- otherwise the multinomial nb could not be computed.
     swap_vectors_sign(data)
