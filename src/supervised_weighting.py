@@ -119,10 +119,16 @@ def main(argv=None):
         def global_idf(info_arr):
             nf = data.num_features()
             info_arr_exp = tf.expand_dims(info_arr, 0)
-            weights = tf.get_variable('weights', [nf * info_by_feat, nf],
-                                             initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf)))
-            biases = tf.get_variable('biases', [nf], initializer=tf.constant_initializer(0.0))
-            return tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
+            weights = tf.get_variable('weights', [nf * info_by_feat, nf/2],
+                                             initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf/2)))
+            biases = tf.get_variable('biases', [nf/2], initializer=tf.constant_initializer(0.0))
+            weights2 = tf.get_variable('weights2', [nf/2, nf],
+                                      initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf)))
+
+            biases2 = tf.get_variable('biases2', [nf], initializer=tf.constant_initializer(0.0))
+            h = tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
+            h = tf.nn.dropout(h, keep_prob=keep_p)
+            return tf.matmul(h, weights2) + biases2
 
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
