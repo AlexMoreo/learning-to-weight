@@ -116,18 +116,20 @@ def main(argv=None):
                     proj = tf.nn.tanh(proj)
             return tf.reshape(proj, [n_rows,-1])
 
-            #ff=ff_multilayer(feat_tfidf,[1000,50],keep_prob=keep_p)
-            #full_tfidf = add_linear_layer(ff, 1)
-            #relu = tf.nn.dropout(tf.nn.relu(tf.matmul(feat_tfidf,h1_weights)+h1_biases), keep_prob=keep_p)
-            #full_tfidf = tf.nn.relu(tf.matmul(relu, proj_weights) + proj_biases)
-            #x_weighted = tf.reshape(full_tfidf, [n_rows, x_size])
-            #print 'done'
-            #return x_weighted
+        def global_idf(info_arr):
+            nf = data.num_features()
+            info_arr_exp = tf.expand_dims(info_arr, 0)
+            weights = tf.get_variable('weights', [nf * info_by_feat, nf],
+                                             initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf)))
+            biases = tf.get_variable('biases', [nf], initializer=tf.constant_initializer(0.0))
+            return tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
 
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         elif FLAGS.computation == 'full':
             weighted_layer = tf.mul(tf_like(x), full_tfidf(x, feat_info))
+        elif FLAGS.computation == 'global':
+            weighted_layer = tf.mul(tf_like(x), global_idf(feat_info))
 
         print weighted_layer.get_shape()
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
@@ -398,7 +400,7 @@ if __name__ == '__main__':
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
-    err_param_range('computation', FLAGS.computation, ['tfidflike','full'])
+    err_param_range('computation', FLAGS.computation, ['tfidflike','full','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')

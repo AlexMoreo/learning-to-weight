@@ -64,7 +64,7 @@ def linear_svm(data, results):
 def random_forest(data, results):
     param_n_estimators = [10, 25, 50, 100]
     param_criterion = ['gini', 'entropy']
-    param_max_features = ['sqrt', 'log2', 1000, None]
+    param_max_features = ['sqrt', 'log2', 1000] #The None configuration (all) is extremely slow
     param_class_weight = ['balanced', 'balanced_subsample', None]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
