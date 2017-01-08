@@ -128,7 +128,16 @@ def main(argv=None):
             biases2 = tf.get_variable('biases2', [nf], initializer=tf.constant_initializer(0.0))
             h = tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
             h = tf.nn.dropout(h, keep_prob=keep_p)
-            return tf.matmul(h, weights2) + biases2
+            proj = tf.matmul(h, weights2) + biases2
+            if FLAGS.forcepos:
+                if FLAGS.linidf:
+                    proj = tf.nn.relu(proj)
+                else:
+                    proj = tf.nn.sigmoid(proj)
+            else:
+                if not FLAGS.linidf:
+                    proj = tf.nn.tanh(proj)
+            return proj
 
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
