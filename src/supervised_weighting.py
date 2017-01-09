@@ -60,61 +60,32 @@ def main(argv=None):
         def tf_like(x_raw):
             tf_param = tf.Variable(tf.ones([1]), tf.float32)
             return tf.mul(tf.log(x_raw + tf.ones_like(x_raw)), tf_param)
-            #return tf.log(x_raw + tf.ones_like(x_raw))
-            #x_stack = tf.reshape(x_raw, shape=[-1,1])
-            #tfx_stack = tf.squeeze(ff_multilayer(x_stack,[1],non_linear_function=tf.nn.sigmoid))
-            #return tf.reshape(tfx_stack, shape=[-1, x_size])
+
+        def last_activation(proj):
+            if FLAGS.forcepos:
+                if FLAGS.linidf:
+                    return tf.nn.relu(proj)
+                else:
+                    return tf.nn.sigmoid(proj)
+            else:
+                if not FLAGS.linidf:
+                    return tf.nn.tanh(proj)
+
 
         def idf_like(info_arr):
-            #return tf.ones(shape=[data.num_features()], dtype=tf.float32)
             filter_weights = tf.get_variable('idf_weights', [info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
             filter_biases  = tf.get_variable('idf_biases', [FLAGS.hidden], initializer=tf.constant_initializer(0.0))
             proj_weights   = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
             proj_biases    = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
 
-            #activation=tf.nn.relu
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            if FLAGS.forcepos:
-                if FLAGS.linidf:
-                    proj = tf.nn.relu(proj)
-                else:
-                    proj = tf.nn.sigmoid(proj)
-            else:
-                if not FLAGS.linidf:
-                    proj = tf.nn.tanh(proj)
+            proj = last_activation(proj)
             return tf.reshape(proj, [n_results])
-
-        def full_tfidf(x_raw, info_arr):
-            filter_weights = tf.get_variable('full_weights', [1+info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
-            filter_biases = tf.get_variable('full_biases', [FLAGS.hidden], initializer=tf.constant_initializer(0.0))
-            proj_weights = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
-            proj_biases = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
-
-            info_arr_exp = tf.expand_dims(info_arr, 0)  # from shape [info_by_feat] to shape [1, info_by_feat]
-            n_rows = tf.shape(x_raw)[0]
-            info_tiled = tf.tile(info_arr_exp, tf.pack([n_rows, 1]))
-            feat_tf = tf.reshape(x_raw, [-1,1])
-            feat_idf= tf.reshape(info_tiled, [-1,info_by_feat])
-            feat_tfidf = tf.concat(1, [feat_tf, feat_idf])
-            x_tfidf = tf.reshape(feat_tfidf, [n_rows,x_size*(info_by_feat+1), 1]) #shape=[rows, cols=(infobyfeat+1)xfeat, channels=1]
-            conv = tf.nn.conv1d(x_tfidf, filters=filter_weights, stride=1+info_by_feat, padding='VALID')
-            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
-            reshape = tf.reshape(relu, [-1, FLAGS.hidden])
-            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            if FLAGS.forcepos:
-                if FLAGS.linidf:
-                    proj = tf.nn.relu(proj)
-                else:
-                    proj = tf.nn.sigmoid(proj)
-            else:
-                if not FLAGS.linidf:
-                    proj = tf.nn.tanh(proj)
-            return tf.reshape(proj, [n_rows,-1])
 
         def global_idf(info_arr):
             nf = data.num_features()
@@ -129,24 +100,14 @@ def main(argv=None):
             h = tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
             h = tf.nn.dropout(h, keep_prob=keep_p)
             proj = tf.matmul(h, weights2) + biases2
-            if FLAGS.forcepos:
-                if FLAGS.linidf:
-                    proj = tf.nn.relu(proj)
-                else:
-                    proj = tf.nn.sigmoid(proj)
-            else:
-                if not FLAGS.linidf:
-                    proj = tf.nn.tanh(proj)
+            proj = last_activation(proj)
             return proj
 
         if FLAGS.computation == 'tfidflike':
             weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
-        elif FLAGS.computation == 'full':
-            weighted_layer = tf.mul(tf_like(x), full_tfidf(x, feat_info))
         elif FLAGS.computation == 'global':
             weighted_layer = tf.mul(tf_like(x), global_idf(feat_info))
 
-        print weighted_layer.get_shape()
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         log_weights = tf.get_variable('log_weights', [data.num_features(), 1], initializer=tf.random_normal_initializer(stddev=.1))
         log_bias = tf.get_variable('log_biases', [1], initializer=tf.constant_initializer(0.0))
@@ -208,6 +169,14 @@ def main(argv=None):
     create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
     pc = data.devel_class_prevalence()
+    outname = FLAGS.outname
+    if not outname:
+        outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_L%s_P%s_R%d.pickle' % \
+                  (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
+                   FLAGS.normalize, FLAGS.forcepos, FLAGS.linidf, FLAGS.pretrain, FLAGS.run)
+
+    #check if the vector has already been calculated
+    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!'%outname)
 
     def supervised_idf(tpr, fpr):
         if FLAGS.pretrain == 'off': return 0.0
@@ -301,16 +270,11 @@ def main(argv=None):
                 if improves:
                     savedstep=step+idf_steps
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
-                #elif f1 == 0.0 and last_improvement > 5:
-                    #    print 'Reinitializing model parameters'
-                    #tf.initialize_all_variables().run()
-                    #last_improvement = 0
 
-                if FLAGS.computation!='full':
-                    eval_dict = as_feed_dict(data.test_batch(), dropout=False)
-                    predictions = prediction.eval(feed_dict=eval_dict)
-                    acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                    print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
+                eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+                predictions = prediction.eval(feed_dict=eval_dict)
+                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
+                print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
@@ -371,11 +335,6 @@ def main(argv=None):
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
                              run_params_dic=run_params_dic)
-        outname=FLAGS.outname
-        if not outname:
-            outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_L%s_P%s_R%d.pickle' % \
-                      (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
-                       FLAGS.normalize,FLAGS.forcepos, FLAGS.linidf, FLAGS.pretrain, FLAGS.run)
         wv.pickle(FLAGS.outdir, outname)
         print 'Weighted vectors saved at '+outname
 
@@ -415,12 +374,12 @@ if __name__ == '__main__':
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
-    err_param_range('computation', FLAGS.computation, ['tfidflike','full','global'])
+    err_param_range('computation', FLAGS.computation, ['tfidflike','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
-    err_exit(FLAGS.computation=='full' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to full.')
-    err_exit(FLAGS.computation == 'full' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to full.')
+    err_exit(FLAGS.computation=='global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')
+    err_exit(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
