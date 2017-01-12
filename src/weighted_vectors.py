@@ -6,11 +6,10 @@ from scipy.sparse import csr_matrix, vstack
 
 
 class WeightedVectors:
-    def __init__(self, method_name, from_dataset, from_category, trX, trY, vaX, vaY, teX, teY, run_params_dic=None):
-        self.method = method_name
+    def __init__(self, vectorizer, from_dataset, from_category, trX, trY, vaX, vaY, teX, teY, run_params_dic=None):
         self.name = from_dataset
         self.positive_cat = from_category
-        self.vectorize = 'learned'
+        self.vectorize = vectorizer
         self.trX = csr_matrix(trX)
         self.trY = trY
         self.vaX = csr_matrix(vaX)

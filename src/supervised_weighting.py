@@ -13,6 +13,7 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
+#TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
 #TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
 #TODO: check without sigmoid, and with relu
 #TODO: ConfWeight
@@ -61,90 +62,57 @@ def main(argv=None):
             tf_param = tf.Variable(tf.ones([1]), tf.float32)
             return tf.mul(tf.log(x_raw + tf.ones_like(x_raw)), tf_param)
 
-        def last_activation(proj):
-            if FLAGS.forcepos:
-                if FLAGS.linidf:
-                    return tf.nn.relu(proj)
-                else:
-                    return tf.nn.sigmoid(proj)
-            else:
-                if not FLAGS.linidf:
-                    return tf.nn.tanh(proj)
-
-
-        def idf_like(info_arr):
-            filter_weights = tf.get_variable('idf_weights', [info_by_feat, 1, FLAGS.hidden], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(FLAGS.hidden)))
-            filter_biases  = tf.get_variable('idf_biases', [FLAGS.hidden], initializer=tf.constant_initializer(0.0))
-            proj_weights   = tf.get_variable('proj_weights', [FLAGS.hidden, 1], initializer=tf.random_normal_initializer(stddev=1.))
-            proj_biases    = tf.get_variable('proj_bias', [1], initializer=tf.constant_initializer(0.0))
-
+        def local_idflike(info_arr):
+            filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
+            proj_weights, proj_biases = get_projection_weights([FLAGS.hidden, 1], 'local_proj')
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            proj = last_activation(proj)
             return tf.reshape(proj, [n_results])
 
-        def global_idf(info_arr):
+        def global_idflike(info_arr):
             nf = data.num_features()
             info_arr_exp = tf.expand_dims(info_arr, 0)
-            weights = tf.get_variable('weights', [nf * info_by_feat, nf/2],
-                                             initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf/2)))
-            biases = tf.get_variable('biases', [nf/2], initializer=tf.constant_initializer(0.0))
-            weights2 = tf.get_variable('weights2', [nf/2, nf],
-                                      initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(nf)))
-
-            biases2 = tf.get_variable('biases2', [nf], initializer=tf.constant_initializer(0.0))
-            h = tf.nn.relu(tf.matmul(info_arr_exp, weights) + biases)
+            w1, b1 = get_projection_weights([nf * info_by_feat, nf/2], 'global_l1')
+            w2, b2 = get_projection_weights([nf/2, nf], 'global_l2')
+            h = tf.nn.relu(tf.matmul(info_arr_exp, w1) + b1)
             h = tf.nn.dropout(h, keep_prob=keep_p)
-            proj = tf.matmul(h, weights2) + biases2
-            proj = last_activation(proj)
-            return proj
+            return tf.nn.bias_add(tf.matmul(h, w2), b2)
 
-        if FLAGS.computation == 'tfidflike':
-            weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
-        elif FLAGS.computation == 'global':
-            weighted_layer = tf.mul(tf_like(x), global_idf(feat_info))
+        def idf_like(feat_info):
+            if FLAGS.computation == 'local': idf_ = local_idflike(feat_info)
+            elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
+            return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
 
+        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
-        log_weights = tf.get_variable('log_weights', [data.num_features(), 1], initializer=tf.random_normal_initializer(stddev=.1))
-        log_bias = tf.get_variable('log_biases', [1], initializer=tf.constant_initializer(0.0))
-        logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, log_weights), log_bias))
-
+        logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
+        logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
 
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
-        logistic_params = [log_weights, log_bias]
-        if FLAGS.optimizer == 'sgd':
-            op_step = tf.Variable(0, trainable=False)
-            decay   = tf.train.exponential_decay(FLAGS.lrate, op_step, 1, 0.9999)
-            end2end_optimizer  = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss)
-            logistic_optimizer = tf.train.GradientDescentOptimizer(learning_rate=decay).minimize(loss, var_list=logistic_params)
-        elif FLAGS.optimizer == 'adam':
-            end2end_optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
-            logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
-        else:  #rmsprop
-            end2end_optimizer  = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss)  # 0.0001
-            logistic_optimizer = tf.train.RMSPropOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=logistic_params)
+        end2end_optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+        logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=[logis_w, logis_b])
 
         #pre-learn the idf-like function as any feature selection function
         #if FLAGS.pretrain != 'off':
         x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
         y_func = tf.placeholder(tf.float32, shape=[None])
         tf.get_variable_scope().reuse_variables()
-        if FLAGS.computation == 'tfidflike':
-            idf_prediction = idf_like(x_func)
+        if FLAGS.computation == 'local':
+            idf_prediction = local_idflike(x_func)
             idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
             idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
         #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
         loss_summary = tf.scalar_summary('loss/loss', loss)
-        log_weight_sum = variable_summaries(log_weights, 'logistic/weight', 'weights')
-        log_bias_sum = variable_summaries(log_bias, 'logistic/bias', 'bias')
+        log_weight_sum = variable_summaries(logis_w, 'logistic/weight', 'weights')
+        log_bias_sum = variable_summaries(logis_b, 'logistic/bias', 'bias')
         #idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
         #idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
         #idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
@@ -171,9 +139,9 @@ def main(argv=None):
     pc = data.devel_class_prevalence()
     outname = FLAGS.outname
     if not outname:
-        outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_L%s_P%s_R%d.pickle' % \
+        outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
                   (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
-                   FLAGS.normalize, FLAGS.forcepos, FLAGS.linidf, FLAGS.pretrain, FLAGS.run)
+                   FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
 
     #check if the vector has already been calculated
     err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!'%outname)
@@ -307,7 +275,6 @@ def main(argv=None):
                           'optimizer': FLAGS.optimizer,
                           'normalize': FLAGS.normalize,
                           'nonnegative': FLAGS.forcepos,
-                          'linidf': FLAGS.linidf,
                           'pretrain': FLAGS.pretrain,
                           'iterations': idf_steps + log_steps,
                           'notes': FLAGS.notes + ('(val_f1%.4f)' % best_f1),
@@ -316,7 +283,6 @@ def main(argv=None):
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
             results = ReusltTable(FLAGS.resultcontainer)
-            data.vectorize='learned'
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
@@ -330,7 +296,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
-        wv = WeightedVectors(method_name='SupervisedWeighting', from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer=FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
@@ -346,7 +312,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
-    flags.DEFINE_integer('batchsize', 32, 'Size of the batches. Set to -1 to avoid batching (default 32).')
+    flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
@@ -355,9 +321,8 @@ if __name__ == '__main__':
     flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
     flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
-    flags.DEFINE_boolean('linidf', True, 'Applies a non-linear function to the output of the idf-like part (default True)')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
-    flags.DEFINE_string('computation', 'tfidflike', 'Computation mode, see documentation (default tfidflike)')
+    flags.DEFINE_string('computation', 'local', 'Computation mode, see documentation (default local)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
                                             '\n show: shows the plot during training'
@@ -374,11 +339,11 @@ if __name__ == '__main__':
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
-    err_param_range('computation', FLAGS.computation, ['tfidflike','global'])
+    err_param_range('computation', FLAGS.computation, ['local','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
-    err_exit(FLAGS.computation=='global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')
+    err_exit(FLAGS.computation == 'global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')
     err_exit(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered

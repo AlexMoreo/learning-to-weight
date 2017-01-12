@@ -25,7 +25,6 @@ class ReusltTable:
                                        'optimizer',
                                        'normalize',
                                        'nonnegative',
-                                       'linidf',
                                        'pretrain',
                                        'iterations',
                                        'notes',
@@ -38,6 +37,13 @@ class ReusltTable:
         if isinstance(value, float):
             value = float('%.3f'%value)
         self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)] = value
+
+    def get(self, column):
+        return self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)]
+
+    def append(self, column, value):
+        prev = self.get(column)
+        self.set(column, prev + " " + value)
 
     def set_all(self, dictionary):
         for key,value in dictionary.items():
@@ -56,7 +62,7 @@ class ReusltTable:
         self.set('run', run)
 
     def add_result_metric_scores(self, acc, f1, prec, rec, cont_table, init_time, notes=''):
-        self.set('notes', notes)
+        self.append('notes', notes)
         self.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
         self.set_all(cont_table)
         self.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})

@@ -43,6 +43,10 @@ def rel_factor(tpr, fpr, pc):
 
     return math.log(2.0 + (a * 1.0 / max(1, c)), 2)
 
+def idf(tpr, fpr, pc):
+    cell = get_probs(tpr, fpr, pc)
+    return math.log(1.0 / cell.p_f())
+
 
 def gss(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
