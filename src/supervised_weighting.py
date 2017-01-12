@@ -205,7 +205,7 @@ def main(argv=None):
         early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
-        logistic_optimization_phase = 10000
+        logistic_optimization_phase = show_step*100
         best_f1 = 0.0
         log_steps = 0
         savedstep = -1
@@ -340,7 +340,7 @@ if __name__ == '__main__':
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('computation', FLAGS.computation, ['local','global'])
-    err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss'])
+    err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
     err_exit(FLAGS.computation == 'global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')

@@ -45,7 +45,9 @@ def rel_factor(tpr, fpr, pc):
 
 def idf(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
-    return math.log(1.0 / cell.p_f())
+    if cell.p_f()>0:
+        return math.log(1.0 / cell.p_f())
+    return 0.0
 
 
 def gss(tpr, fpr, pc):
