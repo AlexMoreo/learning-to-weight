@@ -145,7 +145,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x})
-        wv = WeightedVectors(vectorizer='a-b-learn', from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer='a-b-'+FLAGS.idflike, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
