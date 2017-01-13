@@ -52,8 +52,8 @@ def main(argv=None):
         idf_param = tf.Variable(tf.ones([1]), tf.float32)
         feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
 
-        tf_like = tf.pow(x, tf_param)
-        idf_like = tf.pow(feat_info, idf_param)
+        tf_like = tf.pow(x, tf.maximum(tf_param, 0.00001))
+        idf_like = tf.pow(feat_info, tf.maximum(idf_param, 0.00001))
         tfidf_like = tf.mul(tf_like, idf_like)
         normalized = tf.nn.l2_normalize(tfidf_like, dim=1)
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')

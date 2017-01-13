@@ -13,6 +13,7 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
+#TODO: check cat 19 in 20-newsgroups
 #TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
 #TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
 #TODO: check without sigmoid, and with relu
@@ -98,8 +99,8 @@ def main(argv=None):
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
             return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
 
-        tf_like_p = tf.pow(tf_like(x), tf_param)
-        idf_like_p = tf.pow(idf_like(feat_info), idf_param)
+        tf_like_p = tf.pow(tf_like(x), tf.maximum(tf_param, 0.00001))
+        idf_like_p = tf.pow(idf_like(feat_info), tf.maximum(idf_param, 0.00001))
         weighted_layer = tf.mul(tf_like_p, idf_like_p)
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
