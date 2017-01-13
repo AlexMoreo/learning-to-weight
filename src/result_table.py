@@ -43,7 +43,7 @@ class ReusltTable:
 
     def append(self, column, value):
         prev = self.get(column)
-        self.set(column, prev + " " + value)
+        self.set(column, str(prev) + " " + str(value))
 
     def set_all(self, dictionary):
         for key,value in dictionary.items():

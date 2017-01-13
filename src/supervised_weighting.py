@@ -24,6 +24,15 @@ from classification_benchmark import *
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
+    outname = FLAGS.outname
+    if not outname:
+        outname = '%s_C%d_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
+                  (FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
+                   FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
+
+    # check if the vector has already been calculated
+    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
@@ -54,13 +63,15 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
+        tf_param = tf.Variable(tf.ones([1]), tf.float32)
+        idf_param = tf.Variable(tf.ones([1]), tf.float32)
         keep_p = tf.placeholder(tf.float32)
 
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
-            tf_param = tf.Variable(tf.ones([1]), tf.float32)
-            return tf.mul(tf.log(x_raw + tf.ones_like(x_raw)), tf_param)
+            #return tf.log(x_raw + tf.ones_like(x_raw))
+            return tf.log(x_raw + 1)
 
         def local_idflike(info_arr):
             filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
@@ -87,7 +98,9 @@ def main(argv=None):
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
             return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
 
-        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
+        tf_like_p = tf.pow(tf_like(x), tf_param)
+        idf_like_p = tf.pow(idf_like(feat_info), idf_param)
+        weighted_layer = tf.mul(tf_like_p, idf_like_p)
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
         logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
@@ -137,14 +150,6 @@ def main(argv=None):
     create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
     pc = data.devel_class_prevalence()
-    outname = FLAGS.outname
-    if not outname:
-        outname = '%s_C%d_F%d_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
-                  (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
-                   FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
-
-    #check if the vector has already been calculated
-    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!'%outname)
 
     def supervised_idf(tpr, fpr):
         if FLAGS.pretrain == 'off': return 0.0
@@ -206,14 +211,14 @@ def main(argv=None):
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = show_step*100
-        best_f1 = 0.0
+        best_f1, best_alpha, best_beta = 0.0, None, None
         log_steps = 0
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
             in_logistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
             optimizer_ = logistic_optimizer if in_logistic_phase else end2end_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
-            _, l = session.run([optimizer_, loss], feed_dict=tr_dict)
+            _, l, alpha, beta  = session.run([optimizer_, loss, tf_param, idf_param], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
@@ -221,7 +226,7 @@ def main(argv=None):
                 sum = end2end_summaries.eval(feed_dict=tr_dict)
                 tensorboard.add_train_summary(sum, step+idf_steps)
                 tr_phase = 'logistic' if in_logistic_phase else 'end2end'
-                print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
+                print('[step=%d][ep=%d][op=%s][alpha=%.4f, beta=%.4f] loss=%.10f' % (step, data.epoch, tr_phase, alpha, beta, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
@@ -231,7 +236,8 @@ def main(argv=None):
                 tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = f1 > best_f1
-                best_f1 = max(best_f1, f1)
+                if improves:
+                    best_f1, best_alpha, best_beta = f1, alpha, beta
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
@@ -277,7 +283,7 @@ def main(argv=None):
                           'nonnegative': FLAGS.forcepos,
                           'pretrain': FLAGS.pretrain,
                           'iterations': idf_steps + log_steps,
-                          'notes': FLAGS.notes + ('(val_f1%.4f)' % best_f1),
+                          'notes': FLAGS.notes + 'alpha=%.5f beta=%.5f'%(best_alpha, best_beta),
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor
@@ -296,7 +302,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
-        wv = WeightedVectors(vectorizer=FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer='a-b-'+FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
