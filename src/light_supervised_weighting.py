@@ -16,6 +16,14 @@ from classification_benchmark import *
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
+    outname = FLAGS.outname
+    if not outname:
+        outname = '%s_C%d_F%d_IDF%s_R%d.pickle' % (
+        FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.idflike, FLAGS.run)
+
+    # check if the vector has already been calculated
+    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='sublinear_tf', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
@@ -65,12 +73,6 @@ def main(argv=None):
     create_if_not_exists(FLAGS.checkpointdir)
     create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
-    outname = FLAGS.outname
-    if not outname:
-        outname = '%s_C%d_F%d_IDF%s_R%d.pickle' % (data.name[:3], FLAGS.cat, data.num_features(), FLAGS.idflike, FLAGS.run)
-
-    #check if the vector has already been calculated
-    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!'%outname)
 
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
