@@ -233,7 +233,7 @@ def main(argv=None):
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
                 #predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
-                predictions = session.run([prediction], feed_dict=eval_dict)
+                predictions = prediction.eval(feed_dict=eval_dict)
                 #tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = f1 > best_f1
