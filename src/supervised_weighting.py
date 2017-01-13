@@ -211,7 +211,7 @@ def main(argv=None):
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = show_step*100
-        best_f1, best_alpha, best_beta = 0.0, None, None
+        best_f1, best_alpha, best_beta = 0.0, 1.0, 1.0
         log_steps = 0
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
