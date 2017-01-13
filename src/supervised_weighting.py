@@ -123,19 +123,19 @@ def main(argv=None):
             idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
 
         #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
-        loss_summary = tf.scalar_summary('loss/loss', loss)
-        log_weight_sum = variable_summaries(logis_w, 'logistic/weight', 'weights')
-        log_bias_sum = variable_summaries(logis_b, 'logistic/bias', 'bias')
+        #loss_summary = tf.scalar_summary('loss/loss', loss)
+        #log_weight_sum = variable_summaries(logis_w, 'logistic/weight', 'weights')
+        #log_bias_sum = variable_summaries(logis_b, 'logistic/bias', 'bias')
         #idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
         #idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
         #idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
         #idf_projbias_sum = variable_summaries(tf.get_variable('proj_bias'), 'idf/proj/bias', 'projbias')
         #idf_summaries = tf.merge_summary([idfloss_summary, idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
-        log_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum])
-        end2end_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum,
+        #log_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum])
+        #end2end_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum,
                                       #idf_weight_sum, idf_bias_sum,
                                             #idf_projweight_sum, idf_projbias_sum
-                                             ])
+        #                                     ])
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -168,8 +168,8 @@ def main(argv=None):
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
-        tensorboard = TensorboardData()
-        tensorboard.open(FLAGS.summariesdir, 'sup_weight', session.graph)
+        #tensorboard = TensorboardData()
+        #tensorboard.open(FLAGS.summariesdir, 'sup_weight', session.graph)
 
         # pre-train -------------------------------------------------
         idf_steps = 0
@@ -223,8 +223,8 @@ def main(argv=None):
             log_steps += 1
 
             if step % show_step == 0:
-                sum = end2end_summaries.eval(feed_dict=tr_dict)
-                tensorboard.add_train_summary(sum, step+idf_steps)
+                #sum = end2end_summaries.eval(feed_dict=tr_dict)
+                #tensorboard.add_train_summary(sum, step+idf_steps)
                 tr_phase = 'logistic' if in_logistic_phase else 'end2end'
                 print('[step=%d][ep=%d][op=%s][alpha=%.4f, beta=%.4f] loss=%.10f' % (step, data.epoch, tr_phase, alpha, beta, l_ave / show_step))
                 l_ave = 0.0
@@ -232,8 +232,9 @@ def main(argv=None):
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
-                predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
-                tensorboard.add_valid_summary(sum, step+idf_steps)
+                #predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
+                predictions = session.run([prediction], feed_dict=eval_dict)
+                #tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = f1 > best_f1
                 if improves:
@@ -262,7 +263,7 @@ def main(argv=None):
                 print('Max validation score reached. End of training.')
                 break
 
-        tensorboard.close()
+        #tensorboard.close()
 
         # output -------------------------------------------------
         print 'Test evaluation:'
