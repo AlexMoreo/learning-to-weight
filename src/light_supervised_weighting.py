@@ -86,7 +86,7 @@ def main(argv=None):
         early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
-        best_f1, best_alpha, best_beta = 0.0, None, None
+        best_f1, best_alpha, best_beta = 0.0, 1.0, 1.0
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
             x_,y_ = data.train_batch(batch_size)
