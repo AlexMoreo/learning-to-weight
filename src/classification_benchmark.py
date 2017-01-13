@@ -276,6 +276,7 @@ if __name__ == '__main__':
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
             run_benchmark(data, results, benchmarks)
             print("Completed %d/%d" % (i,len(vectors)))
+            print('-'*80)
 
     print("Done.")
     results.commit()

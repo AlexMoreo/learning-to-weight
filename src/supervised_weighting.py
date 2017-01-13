@@ -98,7 +98,8 @@ def main(argv=None):
         def idf_like(feat_info):
             if FLAGS.computation == 'local': idf_ = local_idflike(feat_info)
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
-            return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
+            #return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
+            return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
 
         tf_like_p = tf.pow(tf_like(x), tf.maximum(tf_param, 0.00001))
         idf_like_p = tf.pow(idf_like(feat_info), tf.maximum(idf_param, 0.00001))
@@ -305,7 +306,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
-        wv = WeightedVectors(vectorizer='a-b-'+FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer='a-b-relu-'+FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
