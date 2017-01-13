@@ -270,10 +270,12 @@ if __name__ == '__main__':
                 run_benchmark(data, results, benchmarks)
     if args.vectordir:
         print("Runing classification benchmark on learnt vectors in " + args.vectordir)
-        for vecname in [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]:
+        vectors = [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]
+        for i,vecname in enumerate(vectors):
             print("Vector file: " + vecname)
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
             run_benchmark(data, results, benchmarks)
+            print("Completed %d/%d" % (i,len(vectors)))
 
     print("Done.")
     results.commit()
