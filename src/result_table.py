@@ -36,7 +36,10 @@ class ReusltTable:
     def set(self, column, value):
         if isinstance(value, float):
             value = float('%.3f'%value)
-        self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)] = value
+        try:
+            self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)] = value
+        except ValueError:
+            print("no index for attribute %s (pass)" %column)
 
     def get(self, column):
         return self.df.iloc[len(self.df) - 1, list(self.df.columns).index(column)]
