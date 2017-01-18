@@ -29,6 +29,7 @@ def knn(data, results):
     init_time = time.time()
     best_f1 = None
     for pca_components in param_pca:
+        if best_f1 == 1.0: break
         if pca_components is not None:
             pca = PCA(n_components=pca_components)
             trX_pca = pca.fit_transform(trX.todense())
@@ -40,6 +41,7 @@ def knn(data, results):
             for w in param_weight:
                 if k==1 and w=='distance': continue
                 try:
+                    if best_f1 == 1.0: break
                     knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
                     vaY_ = knn_.predict(vaX_pca)
                     _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
@@ -48,8 +50,7 @@ def knn(data, results):
                         best_f1 = f1
                         best_params = {'k':k, 'w':w, 'pca':pca_components}
                         #print('\rTrain KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1), end='')
-                        if best_f1 == 1.0:
-                            break
+
                 except ValueError:
                     pass #print('Param configuration not supported, skip')
 
