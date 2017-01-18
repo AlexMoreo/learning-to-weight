@@ -18,6 +18,7 @@ from result_table import ReusltTable
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
 def knn(data, results):
+    t_ini = time.time()
     param_k = [30,15,5,3,1]
     param_weight = ['uniform','distance']
     param_pca = [None, 64, 128, 256]
@@ -72,7 +73,7 @@ def knn(data, results):
         knn_ = KNeighborsClassifier(n_neighbors=best_params['k'], weights=best_params['w'], n_jobs=-1).fit(deX_pca, deY)
         teY_ = knn_.predict(teX_pca)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
-        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d] took %.3fsec.\n' % (acc, f1, prec, rec, sum(teY_), sum(teY), time.time()-t_ini))
 
         results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
                                          init_time,
