@@ -14,7 +14,7 @@ from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
 #TODO: if pow works, check with relu, and check with 1+log(tf)
-#TODO: check cat 19 in 20-newsgroups
+#TODO: check cat 19 in 20-newsgroups: solved! some problem in the a-b-learn algorithms, so they have not won after all :D
 #TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
 #TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
 #TODO: check without sigmoid, and with relu

@@ -7,6 +7,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.decomposition import PCA
 import numpy as np
 import time
 from dataset_loader import *
@@ -15,6 +17,71 @@ from result_table import ReusltTable
 
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
+def knn(data, results):
+    param_k = [30,15,5,3,1]
+    param_weight = ['uniform','distance']
+    param_pca = [None, 64, 128, 256]
+    trX, trY = data.get_train_set()
+    vaX, vaY = data.get_validation_set()
+
+    tr_positive_examples = sum(trY)
+    init_time = time.time()
+    best_f1 = None
+    for pca_components in param_pca:
+        if pca_components is not None:
+            pca = PCA(n_components=pca_components)
+            trX_pca = pca.fit_transform(trX.todense())
+            vaX_pca = pca.transform(vaX.todense())
+        else:
+            trX_pca, vaX_pca = trX, vaX
+        for k in param_k:
+            if k > tr_positive_examples: continue
+            for w in param_weight:
+                if k==1 and w=='distance': continue
+                try:
+                    knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
+                    vaY_ = knn_.predict(vaX_pca)
+                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                    print('Train KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1))
+                    if best_f1 is None or f1 > best_f1:
+                        best_f1 = f1
+                        best_params = {'k':k, 'w':w, 'pca':pca_components}
+                        #print('\rTrain KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1), end='')
+                except ValueError:
+                    pass #print('Param configuration not supported, skip')
+
+    results.init_row_result('KNN', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
+
+    if best_f1 is not None:
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        #sorting indexes is a work-around for a parallel issue due to n_jobs!=1 and in-place internal assignments
+        deX.sort_indices()
+        teX.sort_indices()
+
+        if best_params['pca'] is not None:
+            pca = PCA(n_components=best_params['pca'])
+            deX_pca = pca.fit_transform(deX.todense())
+            teX_pca = pca.transform(teX.todense())
+        else:
+            deX_pca, teX_pca = deX, teX
+
+        knn_ = KNeighborsClassifier(n_neighbors=best_params['k'], weights=best_params['w'], n_jobs=-1).fit(deX_pca, deY)
+        teY_ = knn_.predict(teX_pca)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+
+        results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
+
+    else:
+        results.set('notes', '<not applicable>')
+
+    results.commit()
 
 def linear_svm(data, results):
     param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
@@ -84,7 +151,7 @@ def random_forest(data, results):
                         if best_f1 is None or f1 > best_f1:
                             best_f1 = f1
                             best_params = {'n_estimators':n_estimators, 'criterion':criterion, 'max_features':max_features, 'class_weight':class_weight}
-                            print('\rTrain Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                            print('\rTrain Random Forest (n_estimators=%d, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
                               (n_estimators, criterion, max_features, class_weight, f1), end='')
                     except ValueError:
                         pass #print('Param configuration not supported, skip')
@@ -232,6 +299,8 @@ def run_benchmark(data, results, benchmarks):
         logistic_regression(data, results)
     if benchmarks['multinomialnb']:
         multinomial_nb(data, results)
+    if benchmarks['knn']:
+        knn(data, results)
 
 if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
@@ -245,12 +314,14 @@ if __name__ == '__main__':
     parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
     parser.add_argument("--no-randomforest", help="removes the randomforest classifier from the benchmark", default=False, action="store_true")
     parser.add_argument("--no-logisticregression", help="removes the logisticregression classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-knn", help="removes the knn classifier from the benchmark", default=False, action="store_true")
     args = parser.parse_args()
 
     benchmarks = dict({'linearsvm': not args.no_linearsvm,
                        'multinomialnb': not args.no_multinomialnb,
                        'randomforest': not args.no_randomforest,
-                       'logisticregression': not args.no_logisticregression})
+                       'logisticregression': not args.no_logisticregression,
+                       'knn': not args.no_knn})
 
     print("Loading result file from "+args.resultfile)
     results = ReusltTable(args.resultfile)
