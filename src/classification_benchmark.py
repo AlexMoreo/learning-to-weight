@@ -19,9 +19,9 @@ from result_table import ReusltTable
 
 def knn(data, results):
     t_ini = time.time()
-    param_k = [30,15,5,3,1]
+    param_k = [15,5,3,1]
     param_weight = ['uniform','distance']
-    param_pca = [None, 64, 128, 256]
+    param_pca = [None, 64, 128]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
 
