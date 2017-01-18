@@ -48,6 +48,8 @@ def knn(data, results):
                         best_f1 = f1
                         best_params = {'k':k, 'w':w, 'pca':pca_components}
                         #print('\rTrain KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1), end='')
+                        if best_f1 == 1.0:
+                            break
                 except ValueError:
                     pass #print('Param configuration not supported, skip')
 
