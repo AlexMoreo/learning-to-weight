@@ -40,8 +40,9 @@ def rel_factor(tpr, fpr, pc):
 
     a = cell.tp
     c = cell.fp
+    if c == 0: c = 1
 
-    return math.log(2.0 + (a * 1.0 / max(1, c)), 2)
+    return math.log(2.0 + (a * 1.0 / c), 2)
 
 def idf(tpr, fpr, pc):
     cell = get_probs(tpr, fpr, pc)
