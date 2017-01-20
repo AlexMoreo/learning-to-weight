@@ -31,11 +31,15 @@ def knn(data, results):
     for pca_components in param_pca:
         if best_f1 == 1.0: break
         if pca_components is not None:
+            if data.vectorize=='hashing': continue
             pca = PCA(n_components=pca_components)
             trX_pca = pca.fit_transform(trX.todense())
             vaX_pca = pca.transform(vaX.todense())
         else:
+            trX.sort_indices()
+            vaX.sort_indices()
             trX_pca, vaX_pca = trX, vaX
+
         for k in param_k:
             if k > tr_positive_examples: continue
             for w in param_weight:
@@ -63,14 +67,14 @@ def knn(data, results):
         deX, deY = data.get_devel_set()
         teX, teY = data.get_test_set()
         #sorting indexes is a work-around for a parallel issue due to n_jobs!=1 and in-place internal assignments
-        deX.sort_indices()
-        teX.sort_indices()
 
         if best_params['pca'] is not None:
             pca = PCA(n_components=best_params['pca'])
             deX_pca = pca.fit_transform(deX.todense())
             teX_pca = pca.transform(teX.todense())
         else:
+            deX.sort_indices()
+            teX.sort_indices()
             deX_pca, teX_pca = deX, teX
 
         knn_ = KNeighborsClassifier(n_neighbors=best_params['k'], weights=best_params['w'], n_jobs=-1).fit(deX_pca, deY)
