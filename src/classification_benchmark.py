@@ -38,6 +38,8 @@ def knn(data, results):
         else:
             trX.sort_indices()
             vaX.sort_indices()
+            #trX = sklearn.preprocessing.normalize(trX, norm='l2', axis=1, copy=False)
+            #vaX = sklearn.preprocessing.normalize(vaX, norm='l2', axis=1, copy=False)
             trX_pca, vaX_pca = trX, vaX
 
         for k in param_k:
@@ -314,9 +316,11 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark (ignored if --runbaselines False)", choices=DatasetLoader.valid_datasets)
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=DatasetLoader.valid_datasets)
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
+    parser.add_argument("-m", "--method", help="selects one single vectorizer method to run from "+str(DatasetLoader.valid_vectorizers),
+                        type=str, default="all")
     parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
     parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
     parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
@@ -338,7 +342,7 @@ if __name__ == '__main__':
         print("Runing classification benchmark on baselines")
         print("Dataset: " + args.dataset)
         feat_sel = args.fs
-        for vectorizer in DatasetLoader.valid_vectorizers:
+        for vectorizer in ([args.m] if args.m!='all' else DatasetLoader.valid_vectorizers):
             for pos_cat_code in DatasetLoader.valid_catcodes[args.dataset]:
                 print('Category %d (%s)' % (pos_cat_code, vectorizer))
                 data = DatasetLoader(dataset=args.dataset, vectorize=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
