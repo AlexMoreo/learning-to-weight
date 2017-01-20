@@ -32,6 +32,7 @@ def knn(data, results):
         if best_f1 == 1.0: break
         if pca_components is not None:
             if data.vectorize=='hashing': continue
+            if pca_components >= data.num_features(): continue
             pca = PCA(n_components=pca_components)
             trX_pca = pca.fit_transform(trX.todense())
             vaX_pca = pca.transform(vaX.todense())
