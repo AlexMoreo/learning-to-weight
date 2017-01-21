@@ -27,7 +27,7 @@ def featsel(trX, trY, teX, n_feat):
 def knn(data, results):
     t_ini = time.time()
     param_k = [15,5,3,1]
-    param_weight = ['distance']#['uniform','distance']
+    param_weight = ['distance']#['distance', 'uniform']
     param_pca = [None, 64, 128]
     feat_sel  = [None, 500, 250, 100, 50, 25]
     trX, trY = data.get_train_set()
@@ -59,7 +59,7 @@ def knn(data, results):
             for k in param_k:
                 if k > tr_positive_examples: continue
                 for w in param_weight:
-                    if k==1 and w=='distance': continue
+                    if k==1 and w=='uniform': continue
                     try:
                         if best_f1 == 1.0: break
                         knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
