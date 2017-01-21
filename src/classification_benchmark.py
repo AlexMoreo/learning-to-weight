@@ -17,49 +17,62 @@ from result_table import ReusltTable
 
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
+def featsel(trX, trY, teX, n_feat):
+    print('Selecting top-%d features from %d...'%(n_feat, trX.shape[1]))
+    fs = SelectKBest(chi2, k=n_feat)
+    trX_red = fs.fit_transform(trX, trY)
+    teX_red = fs.transform(teX)
+    return trX_red, teX_red
+
 def knn(data, results):
     t_ini = time.time()
     param_k = [15,5,3,1]
-    param_weight = ['uniform','distance']
+    param_weight = ['distance']#['uniform','distance']
     param_pca = [None, 64, 128]
+    feat_sel  = [None, 500, 250, 100, 50, 25]
     trX, trY = data.get_train_set()
     vaX, vaY = data.get_validation_set()
 
     tr_positive_examples = sum(trY)
     init_time = time.time()
     best_f1 = None
-    for pca_components in param_pca:
-        if best_f1 == 1.0: break
-        if pca_components is not None:
-            if data.vectorize=='hashing': continue
-            if pca_components >= data.num_features(): continue
-            pca = PCA(n_components=pca_components)
-            trX_pca = pca.fit_transform(trX.todense())
-            vaX_pca = pca.transform(vaX.todense())
-        else:
-            trX.sort_indices()
-            vaX.sort_indices()
-            #trX = sklearn.preprocessing.normalize(trX, norm='l2', axis=1, copy=False)
-            #vaX = sklearn.preprocessing.normalize(vaX, norm='l2', axis=1, copy=False)
-            trX_pca, vaX_pca = trX, vaX
+    for fs in feat_sel:
+        if fs is not None:
+            trX, vaX = featsel(trX, trY, vaX, fs)
+        for pca_components in param_pca:
+            if best_f1 == 1.0: break
+            if pca_components is not None:
+                if fs is not None: continue
+                if data.vectorize=='hashing': continue
+                if pca_components >= trX.shape[1]: continue
+                print("PCA(%s) from %d dimensions" % (pca_components, trX.shape[1]))
+                pca = PCA(n_components=pca_components)
+                trX_pca = pca.fit_transform(trX.todense())
+                vaX_pca = pca.transform(vaX.todense())
+            else:
+                trX.sort_indices()
+                vaX.sort_indices()
+                #trX = sklearn.preprocessing.normalize(trX, norm='l2', axis=1, copy=False)
+                #vaX = sklearn.preprocessing.normalize(vaX, norm='l2', axis=1, copy=False)
+                trX_pca, vaX_pca = trX, vaX
 
-        for k in param_k:
-            if k > tr_positive_examples: continue
-            for w in param_weight:
-                if k==1 and w=='distance': continue
-                try:
-                    if best_f1 == 1.0: break
-                    knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
-                    vaY_ = knn_.predict(vaX_pca)
-                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
-                    print('Train KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1))
-                    if best_f1 is None or f1 > best_f1:
-                        best_f1 = f1
-                        best_params = {'k':k, 'w':w, 'pca':pca_components}
-                        #print('\rTrain KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1), end='')
+            for k in param_k:
+                if k > tr_positive_examples: continue
+                for w in param_weight:
+                    if k==1 and w=='distance': continue
+                    try:
+                        if best_f1 == 1.0: break
+                        knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
+                        vaY_ = knn_.predict(vaX_pca)
+                        _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                        print('Train KNN (fs=%s, pca=%s, k=%d, weights=%s) got f-score=%f' % (fs, pca_components, k, w, f1))
+                        if best_f1 is None or f1 > best_f1:
+                            best_f1 = f1
+                            best_params = {'k':k, 'w':w, 'fs':fs, 'pca':pca_components}
+                            #print('\rTrain KNN (pca=%d, k=%d, weights=%s) got f-score=%f' % (pca_components if pca_components is not None else data.num_features(), k, w, f1), end='')
 
-                except ValueError:
-                    pass #print('Param configuration not supported, skip')
+                    except ValueError:
+                        pass #print('Param configuration not supported, skip')
 
     results.init_row_result('KNN', data)
     if isinstance(data, WeightedVectors):
@@ -71,6 +84,8 @@ def knn(data, results):
         teX, teY = data.get_test_set()
         #sorting indexes is a work-around for a parallel issue due to n_jobs!=1 and in-place internal assignments
 
+        if best_params['fs'] is not None:
+            deX, teX = featsel(deX, deY, teX, best_params['fs'])
         if best_params['pca'] is not None:
             pca = PCA(n_components=best_params['pca'])
             deX_pca = pca.fit_transform(deX.todense())
