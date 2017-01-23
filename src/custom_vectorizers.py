@@ -85,12 +85,12 @@ class TftsrVectorizer:
 
     def supervised_weighting(self, w):
         w = w.toarray()
-        #num_cores = multiprocessing.cpu_count()
+        num_cores = multiprocessing.cpu_count()
         nD, nF = w.shape
         if self.supervised_info is None:
-            sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(nF)]
-            #sup = Parallel(n_jobs=num_cores, backend="threading")(
-            #    delayed(wrap_contingency_table)(f, self.devel_vec, self.cat_doc_set, nD) for f in range(nF))
+            #sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(nF)]
+            sup = Parallel(n_jobs=num_cores, backend="threading")(
+                delayed(wrap_contingency_table)(f, self.devel_vec, self.cat_doc_set, nD) for f in range(nF))
             self.supervised_info = np.array([self.tsr_function(sup_i) for sup_i in sup])
         sup_w = np.multiply(w, self.supervised_info)
         sup_w = sklearn.preprocessing.normalize(sup_w, norm='l2', axis=1, copy=False)
