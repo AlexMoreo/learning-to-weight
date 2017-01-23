@@ -65,7 +65,7 @@ def conf_interval(xt, n):
 
 def strength(minPosRelFreq, minPos, maxNeg):
     if minPos > maxNeg:
-        return math.log(2.0 * minPosRelFreq, base=2.0)
+        return math.log(2.0 * minPosRelFreq, 2.0)
     else:
         return 0.0
 
