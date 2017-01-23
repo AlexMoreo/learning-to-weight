@@ -17,6 +17,8 @@ from result_table import ReusltTable
 
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
+n_jobs = -1
+
 def featsel(trX, trY, teX, n_feat):
     print('Selecting top-%d features from %d...'%(n_feat, trX.shape[1]))
     fs = SelectKBest(chi2, k=n_feat)
@@ -62,7 +64,7 @@ def knn(data, results):
                     if k==1 and w=='uniform': continue
                     try:
                         if best_f1 == 1.0: break
-                        knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=-1).fit(trX_pca, trY)
+                        knn_ = KNeighborsClassifier(n_neighbors=k, weights=w, n_jobs=n_jobs).fit(trX_pca, trY)
                         vaY_ = knn_.predict(vaX_pca)
                         _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
                         print('Train KNN (fs=%s, pca=%s, k=%d, weights=%s) got f-score=%f' % (fs, pca_components, k, w, f1))
@@ -95,7 +97,7 @@ def knn(data, results):
             teX.sort_indices()
             deX_pca, teX_pca = deX, teX
 
-        knn_ = KNeighborsClassifier(n_neighbors=best_params['k'], weights=best_params['w'], n_jobs=-1).fit(deX_pca, deY)
+        knn_ = KNeighborsClassifier(n_neighbors=best_params['k'], weights=best_params['w'], n_jobs=n_jobs).fit(deX_pca, deY)
         teY_ = knn_.predict(teX_pca)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d] took %.3fsec.\n' % (acc, f1, prec, rec, sum(teY_), sum(teY), time.time()-t_ini))
@@ -169,7 +171,7 @@ def random_forest(data, results):
                 for class_weight in param_class_weight:
                     try:
                         rf_ = RandomForestClassifier(n_estimators=n_estimators,
-                            criterion=criterion, max_features=max_features, class_weight=class_weight, n_jobs=-1).fit(trX, trY)
+                            criterion=criterion, max_features=max_features, class_weight=class_weight, n_jobs=n_jobs).fit(trX, trY)
                         vaY_ = rf_.predict(vaX)
                         _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
                         #print('Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
@@ -194,7 +196,7 @@ def random_forest(data, results):
                                      criterion=best_params['criterion'],
                                      max_features=best_params['max_features'],
                                      class_weight=best_params['class_weight'],
-                                     n_jobs=-1).fit(deX, deY)
+                                     n_jobs=n_jobs).fit(deX, deY)
         teY_ = rf_.predict(teX)
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f\n' % (acc, f1, prec, rec))
@@ -283,7 +285,7 @@ def logistic_regression(data, results):
         for l in param_penalty:
             for d in param_dual:
                 try:
-                    lr_ = LogisticRegression(C=c, penalty=l, dual=d, n_jobs=-1).fit(trX, trY)
+                    lr_ = LogisticRegression(C=c, penalty=l, dual=d, n_jobs=n_jobs).fit(trX, trY)
                     vaY_ = lr_.predict(vaX)
                     _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
                     #print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
