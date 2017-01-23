@@ -31,7 +31,7 @@ class Dataset:
 
 class DatasetLoader:
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['tfidf', 'tfgr', 'count', 'binary', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfig', 'tfrf', 'bm25']
+    valid_vectorizers = ['tfcw', 'tfgr', 'tfidf', 'count', 'binary', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfig', 'tfrf', 'bm25']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
     def __init__(self, dataset, valid_proportion=0.2, vectorize='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
@@ -88,11 +88,14 @@ class DatasetLoader:
             print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
+            #if isinstance(self.vectorizer, TftsrVectorizer):
+            #    self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
+            #    self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
             if feat_sel is not None:
                 self.feature_selection(int(feat_sel*self.num_features()))
-            if isinstance(self.vectorizer, TftsrVectorizer):
-                self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
-                self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
+            #if isinstance(self.vectorizer, TftsrVectorizer):
+            #    self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
+            #    self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
 
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
@@ -168,6 +171,8 @@ class DatasetLoader:
                 self.vectorizer = TftsrVectorizer(binary_target, gainratio, stop_words='english', sublinear_tf=True, min_df=min_df)
             elif self.vectorize == 'tfrf':
                 self.vectorizer = TftsrVectorizer(binary_target, rel_factor, stop_words='english', sublinear_tf=True, min_df=min_df)
+            elif self.vectorize == 'tfcw':
+                self.vectorizer = TftsrVectorizer(binary_target, conf_weight, stop_words='english', sublinear_tf=True, min_df=min_df)
         elif self.vectorize == 'sublinear_tf':
             self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False, min_df=min_df)
         elif self.vectorize == 'bm25':

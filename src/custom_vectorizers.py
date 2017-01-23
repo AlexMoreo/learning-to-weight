@@ -5,6 +5,10 @@ import sklearn
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from feature_selection_function import *
+import dill
+from joblib import Parallel, delayed
+import multiprocessing
+
 
 class BM25:
 
@@ -53,6 +57,10 @@ class BM25:
         return max(math.log((nD - nd_fi + 0.5) / (nd_fi + 0.5)), 0.0)
 
 
+def wrap_contingency_table(f, feat_vec, cat_doc_set, nD):
+    feat_doc_set = set(feat_vec[:,f].nonzero()[0])
+    return feature_label_contingency_table(cat_doc_set, feat_doc_set, nD)
+
 class TftsrVectorizer:
     def __init__(self, binary_target, tsr_function, stop_words='english', sublinear_tf=False, min_df=1):
         self.stop_words = stop_words
@@ -65,32 +73,27 @@ class TftsrVectorizer:
     def fit_transform(self, raw_documents):
         self.vectorizer = TfidfVectorizer(stop_words=self.stop_words, sublinear_tf=self.sublinear_tf, use_idf=False, min_df=self.min_df)
         self.devel_vec = self.vectorizer.fit_transform(raw_documents)
-        return self.devel_vec
+        #return self.devel_vec
         #print self.devel_vec.shape
-        #return self.supervised_weighting(self.devel_vec)
+        return self.supervised_weighting(self.devel_vec)
 
     def transform(self, raw_documents):
         if not hasattr(self, 'vectorizer'): raise NameError('TftsrVectorizer: transform method called before fit.')
         transformed = self.vectorizer.transform(raw_documents)
-        #return self.supervised_weighting(transformed)
-        return transformed
+        return self.supervised_weighting(transformed)
+        #return transformed
 
     def supervised_weighting(self, w):
         w = w.toarray()
-        #print 'getting sup vector'
+        #num_cores = multiprocessing.cpu_count()
+        nD, nF = w.shape
         if self.supervised_info is None:
-            sup = [self.feature_label_contingency_table(f) for f in range(w.shape[1])]
-            pc = sup[0].p_c()
-            #print 'getting feat corr vector'
-            self.supervised_info = np.array([self.tsr_function(sup_i.tpr(), sup_i.fpr(), pc) for sup_i in sup])
-        #print 'multiply'
+            sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(w.shape[nF])]
+            #sup = Parallel(n_jobs=num_cores, backend="threading")(
+            #    delayed(wrap_contingency_table)(f, self.devel_vec, self.cat_doc_set, nD) for f in range(nF))
+            self.supervised_info = np.array([self.tsr_function(sup_i) for sup_i in sup])
         sup_w = np.multiply(w, self.supervised_info)
-        #print 'normalize'
         sup_w = sklearn.preprocessing.normalize(sup_w, norm='l2', axis=1, copy=False)
         return scipy.sparse.csr_matrix(sup_w)
 
-    def feature_label_contingency_table(self, feat_index):
-        feat_vec = self.devel_vec[:, feat_index]  # TODO: cache also the feature-vectors
-        feat_doc_set = set(feat_vec.nonzero()[0])
-        nD = self.devel_vec.shape[0]
-        return feature_label_contingency_table(self.cat_doc_set, feat_doc_set, nD)
+

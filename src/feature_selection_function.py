@@ -1,4 +1,6 @@
 import math
+from scipy.stats import t
+from scipy.stats import norm
 
 def get_probs(tpr, fpr, pc):
     # tpr = p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
@@ -10,9 +12,11 @@ def get_probs(tpr, fpr, pc):
     tn = pnc - fp
     return ContTable(tp=tp, fn=fn, fp=fp, tn=tn)
 
-def infogain(tpr, fpr, pc):
+def apply_tsr(tpr, fpr, pc, tsr):
     cell = get_probs(tpr, fpr, pc)
+    return tsr(cell)
 
+def infogain(cell):
     def ig_factor(p_tc, p_t, p_c):
         den = p_t * p_c
         if den != 0.0 and p_tc != 0:
@@ -23,37 +27,66 @@ def infogain(tpr, fpr, pc):
     return ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) \
            + ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
 
-def gainratio(tpr, fpr, pc):
+def gainratio(cell):
+    pc = cell.p_c()
     pnc = 1.0 - pc
     norm = pc * math.log(pc, 2) + pnc * math.log(pnc, 2)
-    return infogain(tpr, fpr, pc) / (-norm)
+    return infogain(cell) / (-norm)
 
-def chisquare(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
+def chisquare(cell):
     den = cell.p_f() * cell.p_not_f() * cell.p_c() * cell.p_not_c()
     if den==0.0: return 0.0
-    num = gss(tpr,fpr,pc)**2
+    num = gss(cell)**2
     return num / den
 
-def rel_factor(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
-
+def rel_factor(cell):
     a = cell.tp
     c = cell.fp
     if c == 0: c = 1
 
     return math.log(2.0 + (a * 1.0 / c), 2)
 
-def idf(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
+def idf(cell):
     if cell.p_f()>0:
         return math.log(1.0 / cell.p_f())
     return 0.0
 
-
-def gss(tpr, fpr, pc):
-    cell = get_probs(tpr, fpr, pc)
+def gss(cell):
     return cell.p_tp()*cell.p_tn() - cell.p_fp()*cell.p_fn()
+
+def conf_interval(xt, n):
+    if n>30:
+        z2 = 3.84145882069 # norm.ppf(0.5+0.95/2.0)**2
+    else:
+        z2 = t.ppf(0.5 + 0.95 / 2.0, df=max(n-1,1)) ** 2
+    p = (xt + 0.5 * z2) / (n + z2)
+    amplitude = 0.5 * z2 * math.sqrt((p * (1.0 - p)) / (n + z2))
+    return p, amplitude
+
+def strength(minPosRelFreq, minPos, maxNeg):
+    if minPos > maxNeg:
+        return math.log(2 * minPosRelFreq, base=2)
+    else:
+        return 0.0
+
+
+def conf_weight(cell):
+    c = cell.get_c()
+    not_c = cell.get_not_c()
+    tp = cell.tp
+    fp = cell.fp
+
+    pos_p, pos_amp = conf_interval(tp, c)
+    neg_p, neg_amp = conf_interval(fp, not_c)
+
+    min_pos = pos_p-pos_amp
+    max_neg = neg_p+neg_amp
+
+    minpos_relfreq = min_pos / (min_pos + max_neg)
+
+    str_tplus = strength(minpos_relfreq, min_pos, max_neg);
+
+    return str_tplus;
 
 class ContTable:
     def __init__(self, tp=0, tn=0, fp=0, fn=0):

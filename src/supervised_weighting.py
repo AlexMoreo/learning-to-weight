@@ -14,10 +14,8 @@ from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 
 #TODO: if pow works, check with relu, and check with 1+log(tf)
-#TODO: check cat 19 in 20-newsgroups: solved! some problem in the a-b-learn algorithms, so they have not won after all :D
 #TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
 #TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
-#TODO: check without sigmoid, and with relu
 #TODO: ConfWeight
 #TODO: check out the separability index
 #TODO: add a new non-linear classifier
@@ -157,7 +155,7 @@ def main(argv=None):
     def supervised_idf(tpr, fpr):
         if FLAGS.pretrain == 'off': return 0.0
         fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
-        return fsmethod(tpr, fpr, pc)
+        return apply_tsr(tpr, fpr, pc, fsmethod)
 
     def pretrain_batch(batch_size=1):
         def sample():
