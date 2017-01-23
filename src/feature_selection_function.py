@@ -69,8 +69,9 @@ def strength(minPosRelFreq, minPos, maxNeg):
     else:
         return 0.0
 
-
-def conf_weight(cell):
+#set cancel_features=True to allow some features to be weighted as 0 (as in the original article)
+#however, for some extremely imbalanced dataset caused all documents to be 0
+def conf_weight(cell, cancel_features=False):
     c = cell.get_c()
     not_c = cell.get_not_c()
     tp = cell.tp
@@ -82,9 +83,12 @@ def conf_weight(cell):
     min_pos = pos_p-pos_amp
     max_neg = neg_p+neg_amp
     den = (min_pos + max_neg)
-    minpos_relfreq = min_pos / (den if den > 0 else 1)
+    minpos_relfreq = min_pos / (den if den != 0 else 1)
 
     str_tplus = strength(minpos_relfreq, min_pos, max_neg);
+
+    if str_tplus == 0 and not cancel_features:
+        return 1e-20
 
     return str_tplus;
 
