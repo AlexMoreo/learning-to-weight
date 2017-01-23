@@ -161,7 +161,7 @@ class DatasetLoader:
             self.vectorizer = TfidfVectorizer(stop_words='english', min_df=min_df)
         elif self.vectorize == 'sublinear_tfidf':
             self.vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, min_df=min_df)
-        elif self.vectorize in ['tfig', 'tfgr', 'tfchi2', 'tfrf']:
+        elif self.vectorize in ['tfig', 'tfgr', 'tfchi2', 'tfrf', 'tfcw']:
             binary_target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
             if self.vectorize == 'tfig':
                 self.vectorizer = TftsrVectorizer(binary_target, infogain, stop_words='english', sublinear_tf=True, min_df=min_df)
