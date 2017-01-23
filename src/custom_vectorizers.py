@@ -88,7 +88,7 @@ class TftsrVectorizer:
         #num_cores = multiprocessing.cpu_count()
         nD, nF = w.shape
         if self.supervised_info is None:
-            sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(w.shape[nF])]
+            sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(nF)]
             #sup = Parallel(n_jobs=num_cores, backend="threading")(
             #    delayed(wrap_contingency_table)(f, self.devel_vec, self.cat_doc_set, nD) for f in range(nF))
             self.supervised_info = np.array([self.tsr_function(sup_i) for sup_i in sup])
