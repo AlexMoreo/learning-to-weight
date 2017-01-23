@@ -65,7 +65,7 @@ def conf_interval(xt, n):
 
 def strength(minPosRelFreq, minPos, maxNeg):
     if minPos > maxNeg:
-        return math.log(2 * minPosRelFreq, base=2)
+        return math.log(2.0 * minPosRelFreq, base=2.0)
     else:
         return 0.0
 
@@ -81,8 +81,8 @@ def conf_weight(cell):
 
     min_pos = pos_p-pos_amp
     max_neg = neg_p+neg_amp
-
-    minpos_relfreq = min_pos / (min_pos + max_neg)
+    den = (min_pos + max_neg)
+    minpos_relfreq = min_pos / (den if den > 0 else 1)
 
     str_tplus = strength(minpos_relfreq, min_pos, max_neg);
 
