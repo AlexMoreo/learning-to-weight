@@ -38,8 +38,7 @@ class DatasetLoader:
         err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
-        err_exit(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset],
-                 'Error. Positive category not in scope.')
+        err_exit(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorize=vectorize
         self.rep_mode=rep_mode
@@ -88,15 +87,8 @@ class DatasetLoader:
             print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
             self.binarize_classes()
             self.divide_train_val_evenly(valid_proportion=valid_proportion)
-            #if isinstance(self.vectorizer, TftsrVectorizer):
-            #    self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
-            #    self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
-            if feat_sel is not None:
-                self.feature_selection(int(feat_sel*self.num_features()))
-            #if isinstance(self.vectorizer, TftsrVectorizer):
-            #    self.devel_vec = self.vectorizer.supervised_weighting(self.devel_vec)
-            #    self.test_vec = self.vectorizer.supervised_weighting(self.test_vec)
-
+        if feat_sel is not None:
+            self.feature_selection(int(feat_sel*self.num_features()))
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
     # In extremely imbalanced cases, the train set is guaranteed to have some positive examples

@@ -63,15 +63,13 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
-        tf_param = tf.Variable(tf.ones([1]), tf.float32)
-        idf_param = tf.Variable(tf.ones([1]), tf.float32)
         keep_p = tf.placeholder(tf.float32)
+        tf_param = tf.Variable(tf.ones([1]), tf.float32)
 
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
-            #return tf.log(x_raw + tf.ones_like(x_raw))
-            return tf.log(x_raw + 1)
+            return tf.mul(tf.log(x_raw + 1), tf_param)
 
         def local_idflike(info_arr):
             filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
@@ -96,12 +94,9 @@ def main(argv=None):
         def idf_like(feat_info):
             if FLAGS.computation == 'local': idf_ = local_idflike(feat_info)
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
-            #return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
             return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
 
-        tf_like_p = tf.pow(tf_like(x), tf.maximum(tf_param, 0.00001))
-        idf_like_p = tf.pow(idf_like(feat_info), tf.maximum(idf_param, 0.00001))
-        weighted_layer = tf.mul(tf_like_p, idf_like_p)
+        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
         logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
