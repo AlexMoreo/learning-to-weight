@@ -73,22 +73,28 @@ def main(argv=None):
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
+            #tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
+            #tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
+            #tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
+
+            #return tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset)
+            #-------
             width = 1
             in_channels = 1
-            out_channels = FLAGS.hidden
+            out_channels = FLAGS.hidden / 20
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
-            proj_weights, proj_biases = get_projection_weights([FLAGS.hidden, 1], 'local_tf_proj')
+            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
             conv = tf.nn.conv1d(tf_tensor, filters=filter_weights, stride=1, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
-            reshape = tf.reshape(relu, [-1, FLAGS.hidden])
+            reshape = tf.reshape(relu, [-1, out_channels])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             return tf.reshape(proj, [-1, x_size])
 
         def idf_like(info_arr):
             width = info_by_feat
             in_channels = 1
-            out_channels = 100 #FLAGS.hidden
+            out_channels = FLAGS.hidden
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_idf_filter')
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
