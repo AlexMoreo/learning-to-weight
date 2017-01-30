@@ -15,14 +15,6 @@ from classification_benchmark import *
 from joblib import Parallel, delayed
 import multiprocessing
 
-#TODO: if pow works, check with relu, and check with 1+log(tf)
-#TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
-#TODO: add information to sup_info, e.g., idf, ig, ptp ptn pfp pfn
-#TODO: ConfWeight
-#TODO: check out the separability index
-#TODO: add a new non-linear classifier
-#TODO: parallelize supervised info vector
-#TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
@@ -69,20 +61,23 @@ def main(argv=None):
         y = tf.placeholder(tf.float32, shape=[None])
         keep_p = tf.placeholder(tf.float32)
         var_p = tf.Variable(tf.ones([1]), tf.float32)
+        tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
+        tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
+        tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
 
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
-        def tf_like(x_raw):
-            tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
-            tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
-            #tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
+        def tf_like(x_raw, epsilon=1e-12):
 
-            #return tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset)
-            return tf.mul(tf.pow(x_raw, tf_pow), tf_prod)
+            #mask = tf.ceil(x_raw)
+            #return tf.mul(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), mask)
+            #return tf.maximum(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), 0.0)
+            #return tf.mul(tf.pow(x_raw, tf_pow), tf_prod)
+            return tf.pow(x_raw, tf_pow)
             #-------
             width = 1
             in_channels = 1
-            out_channels = FLAGS.hidden / 20
+            out_channels = 5 # FLAGS.hidden / 20
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
@@ -106,7 +101,7 @@ def main(argv=None):
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             return tf.reshape(proj, [n_results])
 
-        def normalization_like(v):
+        def normalization_like(v, epsilon=1e-12):
             # L^p norm
             print 'shape'
             print v.get_shape()
@@ -114,9 +109,9 @@ def main(argv=None):
             print vv.get_shape()
             sum_vv = tf.reduce_sum(vv, 1, keep_dims=True)
             print sum_vv.get_shape()
-            den = tf.pow(sum_vv, 1.0/var_p)
+            den = tf.pow(sum_vv, 1.0/tf.maximum(var_p, epsilon))
             print den.get_shape()
-            return tf.div(v,den)
+            return tf.div(v,tf.maximum(den, epsilon))
 
         normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
@@ -148,7 +143,7 @@ def main(argv=None):
         tf.initialize_all_variables().run()
 
         # train -------------------------------------------------
-        show_step = plotsteps = 10
+        show_step = plotsteps = 1
         valid_step = show_step * 10
         last_improvement = 0
         early_stop_steps = 20
@@ -159,12 +154,13 @@ def main(argv=None):
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
-            _, l  = session.run([optimizer, loss], feed_dict=tr_dict)
+            #_, l, tf_po, tf_pr  = session.run([optimizer, loss, tf_pow, tf_prod], feed_dict=tr_dict)
+            _, l, tf_po, tf_pr, tf_of = session.run([optimizer, loss, tf_pow, tf_prod, tf_offset], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
             if step % show_step == 0:
-                print('[step=%d][ep=%d] loss=%.10f' % (step, data.epoch, l_ave / show_step))
+                print('[step=%d][ep=%d][tf:pow %.3f, tf:w %.3f tf:o: %.3f] loss=%.10f' % (step, data.epoch, tf_po, tf_pr, tf_of, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
@@ -255,7 +251,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
-    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
+    flags.DEFINE_float('lrate', .0005, 'Initial learning rate (default .0005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
