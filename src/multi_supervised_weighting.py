@@ -147,7 +147,7 @@ def main(argv=None):
         tf.initialize_all_variables().run()
 
         # train -------------------------------------------------
-        show_step = plotsteps = 1
+        show_step = plotsteps = 10
         valid_step = show_step * 10
         last_improvement = 0
         early_stop_steps = 20
