@@ -75,9 +75,10 @@ def main(argv=None):
         def tf_like(x_raw):
             tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
             tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
-            tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
+            #tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
 
-            return tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset)
+            #return tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset)
+            return tf.mul(tf.pow(x_raw, tf_pow), tf_prod)
             #-------
             width = 1
             in_channels = 1
