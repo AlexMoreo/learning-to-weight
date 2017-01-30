@@ -12,6 +12,8 @@ from sklearn.preprocessing import normalize
 import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
+from joblib import Parallel, delayed
+import multiprocessing
 
 #TODO: if pow works, check with relu, and check with 1+log(tf)
 #TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
@@ -47,10 +49,12 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
     print('Getting supervised correlations')
+    num_cores = multiprocessing.cpu_count()
+    #sup = Parallel(n_jobs=num_cores, backend="threading")(
+    #    delayed(data.feature_label_contingency_table)(f, cat_label=1) for f in range(data.num_features()))
     sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
     feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
 
-    #feat_corr_info = np.concatenate([[sup_i.p_tp(), sup_i.p_fp(), sup_i.p_fn(), sup_i.p_tn()] for sup_i in sup])
     info_by_feat = len(feat_corr_info[0])
 
     x_size = data.num_features()
@@ -64,40 +68,50 @@ def main(argv=None):
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
         keep_p = tf.placeholder(tf.float32)
-        tf_param = tf.Variable(tf.ones([1]), tf.float32)
+        var_p = tf.Variable(tf.ones([1]), tf.float32)
 
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
-            return tf.mul(tf.log(x_raw + 1), tf_param)
+            width = 1
+            in_channels = 1
+            out_channels = FLAGS.hidden
+            filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
+            proj_weights, proj_biases = get_projection_weights([FLAGS.hidden, 1], 'local_tf_proj')
+            tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
+            conv = tf.nn.conv1d(tf_tensor, filters=filter_weights, stride=1, padding='VALID')
+            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
+            reshape = tf.reshape(relu, [-1, FLAGS.hidden])
+            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
+            return tf.reshape(proj, [-1, x_size])
 
-        def local_idflike(info_arr):
-            filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
-            proj_weights, proj_biases = get_projection_weights([FLAGS.hidden, 1], 'local_proj')
+        def idf_like(info_arr):
+            width = info_by_feat
+            in_channels = 1
+            out_channels = 100 #FLAGS.hidden
+            filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_idf_filter')
+            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
-            reshape = tf.reshape(relu, [n_results, FLAGS.hidden])
+            reshape = tf.reshape(relu, [n_results, out_channels])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             return tf.reshape(proj, [n_results])
 
-        def global_idflike(info_arr):
-            nf = data.num_features()
-            info_arr_exp = tf.expand_dims(info_arr, 0)
-            w1, b1 = get_projection_weights([nf * info_by_feat, nf/2], 'global_l1')
-            w2, b2 = get_projection_weights([nf/2, nf], 'global_l2')
-            h = tf.nn.relu(tf.matmul(info_arr_exp, w1) + b1)
-            h = tf.nn.dropout(h, keep_prob=keep_p)
-            return tf.nn.bias_add(tf.matmul(h, w2), b2)
+        def normalization_like(v):
+            # L^p norm
+            print 'shape'
+            print v.get_shape()
+            vv = tf.pow(tf.abs(v),var_p)
+            print vv.get_shape()
+            sum_vv = tf.reduce_sum(vv, 1, keep_dims=True)
+            print sum_vv.get_shape()
+            den = tf.pow(sum_vv, 1.0/var_p)
+            print den.get_shape()
+            return tf.div(v,den)
 
-        def idf_like(feat_info):
-            if FLAGS.computation == 'local': idf_ = local_idflike(feat_info)
-            elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
-            return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
-
-        weighted_layer = tf.mul(tf_like(x), idf_like(feat_info))
-        normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
+        normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
         logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
@@ -105,33 +119,7 @@ def main(argv=None):
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
-        end2end_optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
-        logistic_optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss, var_list=[logis_w, logis_b])
-
-        #pre-learn the idf-like function as any feature selection function
-        #if FLAGS.pretrain != 'off':
-        x_func = tf.placeholder(tf.float32, shape=[None, info_by_feat])
-        y_func = tf.placeholder(tf.float32, shape=[None])
-        tf.get_variable_scope().reuse_variables()
-        if FLAGS.computation == 'local':
-            idf_prediction = local_idflike(x_func)
-            idf_loss = tf.reduce_mean(tf.square(tf.sub(y_func, idf_prediction)))
-            idf_optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(idf_loss)
-
-        #idfloss_summary = tf.scalar_summary('loss/idf_loss', idf_loss)
-        #loss_summary = tf.scalar_summary('loss/loss', loss)
-        #log_weight_sum = variable_summaries(logis_w, 'logistic/weight', 'weights')
-        #log_bias_sum = variable_summaries(logis_b, 'logistic/bias', 'bias')
-        #idf_weight_sum = variable_summaries(tf.get_variable('idf_weights'), 'idf/weight', 'weights')
-        #idf_bias_sum = variable_summaries(tf.get_variable('idf_biases'), 'idf/bias', 'bias')
-        #idf_projweight_sum = variable_summaries(tf.get_variable('proj_weights'), 'idf/proj/weight', 'projweight')
-        #idf_projbias_sum = variable_summaries(tf.get_variable('proj_bias'), 'idf/proj/bias', 'projbias')
-        #idf_summaries = tf.merge_summary([idfloss_summary, idf_weight_sum, idf_bias_sum, idf_projweight_sum, idf_projbias_sum])
-        #log_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum])
-        #end2end_summaries = tf.merge_summary([loss_summary, log_weight_sum, log_bias_sum,
-                                      #idf_weight_sum, idf_bias_sum,
-                                            #idf_projweight_sum, idf_projbias_sum
-        #                                     ])
+        optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -147,99 +135,44 @@ def main(argv=None):
     create_if_not_exists(FLAGS.outdir)
     pc = data.devel_class_prevalence()
 
-    def supervised_idf(tpr, fpr):
-        if FLAGS.pretrain == 'off': return 0.0
-        fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
-        return apply_tsr(tpr, fpr, pc, fsmethod)
-
-    def pretrain_batch(batch_size=1):
-        def sample():
-            x = [random.random() for _ in range(info_by_feat)]
-            y = supervised_idf(tpr=x[0], fpr=x[1])
-            return (x, y)
-        next = [sample() for _ in range(batch_size)]
-        return zip(*next)
-
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
-        #tensorboard = TensorboardData()
-        #tensorboard.open(FLAGS.summariesdir, 'sup_weight', session.graph)
-
-        # pre-train -------------------------------------------------
-        idf_steps = 0
-        epsilon = 0.0003
-        def idf_wrapper(x):
-            return idf_prediction.eval(feed_dict={x_func: [x], keep_p: 1.0})
-        plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir,
-                       supervised_idf if FLAGS.pretrain!='off' else None, idf_wrapper, plotpoints=feat_corr_info)
-        plotsteps = 100
-        if FLAGS.pretrain != 'off':
-            if FLAGS.plotmode in ['img', 'show']: plot.plot(step=0)
-            l_ave = 0.0
-            show_step = 1000
-            for step in range(1, 40001):
-                x_, y_ = pretrain_batch()
-                _, l = session.run([idf_optimizer, idf_loss], feed_dict={x_func: x_, y_func: y_, keep_p:drop_keep_p})
-                l_ave += l
-                idf_steps += 1
-
-                if step % show_step == 0:
-                    #sum = idf_summaries.eval({x_func: x_, y_func: y_, keep_p:drop_keep_p})
-                    #tensorboard.add_train_summary(sum, step)
-                    l_ave /= show_step
-                    print('[step=%d] idf-loss=%.7f' % (step, l_ave))
-                    if l_ave < epsilon:
-                        print 'Error < '+str(epsilon)+', proceed'
-                        break
-                    l_ave = 0.0
-
-                if FLAGS.plotmode == 'vid' and step % plotsteps == 0: plot.plot(step=step)
-
-            if FLAGS.plotmode in ['img', 'show']: plot.plot(step=step)
 
         # train -------------------------------------------------
-        show_step = plotsteps = 10
+        show_step = plotsteps = 1
         valid_step = show_step * 10
         last_improvement = 0
         early_stop_steps = 20
         l_ave=0.0
         timeref = time.time()
-        logistic_optimization_phase = show_step*100
-        best_f1, best_alpha, best_beta = 0.0, 1.0, 1.0
+        best_f1 = 0.0
         log_steps = 0
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
-            in_logistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
-            optimizer_ = logistic_optimizer if in_logistic_phase else end2end_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
-            _, l, alpha, beta  = session.run([optimizer_, loss, tf_param, idf_param], feed_dict=tr_dict)
+            _, l  = session.run([optimizer, loss], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
             if step % show_step == 0:
-                #sum = end2end_summaries.eval(feed_dict=tr_dict)
-                #tensorboard.add_train_summary(sum, step+idf_steps)
-                tr_phase = 'logistic' if in_logistic_phase else 'end2end'
-                print('[step=%d][ep=%d][op=%s][alpha=%.4f, beta=%.4f] loss=%.10f' % (step, data.epoch, tr_phase, alpha, beta, l_ave / show_step))
+                print('[step=%d][ep=%d] loss=%.10f' % (step, data.epoch, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
                 eval_dict = as_feed_dict(data.val_batch(), dropout=False)
-                #predictions, sum = session.run([prediction, loss_summary], feed_dict=eval_dict)
                 predictions = prediction.eval(feed_dict=eval_dict)
-                #tensorboard.add_valid_summary(sum, step+idf_steps)
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = f1 > best_f1
                 if improves:
-                    best_f1, best_alpha, best_beta = f1, alpha, beta
+                    best_f1 = f1
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
-                    savedstep=step+idf_steps
+                    savedstep=step
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
 
                 eval_dict = as_feed_dict(data.test_batch(), dropout=False)
@@ -248,8 +181,8 @@ def main(argv=None):
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
-            if FLAGS.plotmode=='vid' and step % plotsteps == 0:
-                plot.plot(step=step+idf_steps)
+            #if FLAGS.plotmode=='vid' and step % plotsteps == 0:
+            #    plot.plot(step=step)
 
             #early stop if not improves after 10 validations
             if last_improvement >= early_stop_steps:
@@ -259,13 +192,11 @@ def main(argv=None):
                 print('Max validation score reached. End of training.')
                 break
 
-        #tensorboard.close()
-
         # output -------------------------------------------------
         print 'Test evaluation:'
         if savedstep>0:
             restore_checkpoint(saver, session, FLAGS.checkpointdir)
-        if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
+        #if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
         eval_dict = as_feed_dict(data.test_batch(), dropout=False)
         predictions = prediction.eval(feed_dict=eval_dict)
         acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
@@ -279,7 +210,7 @@ def main(argv=None):
                           'normalize': FLAGS.normalize,
                           'nonnegative': FLAGS.forcepos,
                           'pretrain': FLAGS.pretrain,
-                          'iterations': idf_steps + log_steps,
+                          'iterations': log_steps,
                           'notes': FLAGS.notes + 'alpha=%.5f beta=%.5f'%(best_alpha, best_beta),
                           'run': FLAGS.run}
 
@@ -299,7 +230,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         test_x, test_y   = data.test_batch()
         test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
-        wv = WeightedVectors(vectorizer='a-b-relu-'+FLAGS.computation, from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer='full_LtoW', from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
@@ -312,7 +243,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
+    flags.DEFINE_string('dataset', '', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default none)')
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')

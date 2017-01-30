@@ -257,7 +257,7 @@ class DatasetLoader:
         feat_vec = self.devel_vec[:,feat_index] #TODO: cache also the feature-vectors
         if cat_label not in self.cat_vec_dic:
             binary_target = self.binarize_label_vector(self.devel.target, self.classification, cat_label)
-            self.cat_vec_dic[cat_label] = set([i for i, label in enumerate(binary_target) if label == 1])
+            self.cat_vec_dic[cat_label] = {i for i, label in enumerate(binary_target) if label == 1}
         feat_doc_set = set(feat_vec.nonzero()[0])
         return feature_label_contingency_table(self.cat_vec_dic[cat_label], feat_doc_set, self.num_devel_docs())
 

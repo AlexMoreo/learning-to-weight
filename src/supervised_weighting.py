@@ -207,14 +207,14 @@ def main(argv=None):
         l_ave=0.0
         timeref = time.time()
         logistic_optimization_phase = show_step*100
-        best_f1, best_alpha, best_beta = 0.0, 1.0, 1.0
+        best_f1 = 0.0
         log_steps = 0
         savedstep = -1
         for step in range(1,FLAGS.maxsteps):
             in_logistic_phase = FLAGS.pretrain!='off' and step < logistic_optimization_phase
             optimizer_ = logistic_optimizer if in_logistic_phase else end2end_optimizer
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
-            _, l, alpha, beta  = session.run([optimizer_, loss, tf_param, idf_param], feed_dict=tr_dict)
+            _, l  = session.run([optimizer_, loss], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
@@ -222,7 +222,7 @@ def main(argv=None):
                 #sum = end2end_summaries.eval(feed_dict=tr_dict)
                 #tensorboard.add_train_summary(sum, step+idf_steps)
                 tr_phase = 'logistic' if in_logistic_phase else 'end2end'
-                print('[step=%d][ep=%d][op=%s][alpha=%.4f, beta=%.4f] loss=%.10f' % (step, data.epoch, tr_phase, alpha, beta, l_ave / show_step))
+                print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
@@ -234,7 +234,7 @@ def main(argv=None):
                 acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
                 improves = f1 > best_f1
                 if improves:
-                    best_f1, best_alpha, best_beta = f1, alpha, beta
+                    best_f1 = f1
 
                 print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
@@ -280,7 +280,7 @@ def main(argv=None):
                           'nonnegative': FLAGS.forcepos,
                           'pretrain': FLAGS.pretrain,
                           'iterations': idf_steps + log_steps,
-                          'notes': FLAGS.notes + 'alpha=%.5f beta=%.5f'%(best_alpha, best_beta),
+                          'notes': FLAGS.notes ,
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor
