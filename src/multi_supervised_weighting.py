@@ -211,7 +211,7 @@ def main(argv=None):
                           'nonnegative': FLAGS.forcepos,
                           'pretrain': FLAGS.pretrain,
                           'iterations': log_steps,
-                          'notes': FLAGS.notes + 'alpha=%.5f beta=%.5f'%(best_alpha, best_beta),
+                          'notes': FLAGS.notes,
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor
