@@ -112,9 +112,12 @@ def main(argv=None):
             return tf.div(v,tf.maximum(den, epsilon))
 
         normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
-        logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
-        logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
-        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
+        ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
+        #logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
+        logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
+        logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), y))
+        #loss = tf.minimum(loss, 2.0)
 
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
