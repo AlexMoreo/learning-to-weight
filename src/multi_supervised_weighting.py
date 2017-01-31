@@ -31,9 +31,9 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
-    print('L1-normalize')
-    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    #print('L1-normalize')
+    #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+    #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -60,7 +60,7 @@ def main(argv=None):
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
         keep_p = tf.placeholder(tf.float32)
-        var_p = tf.Variable(tf.ones([1]), tf.float32)
+        var_p = tf.get_variable('p', shape=[1], initializer=tf.constant_initializer(2.0))
         tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
         tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
         tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
@@ -72,19 +72,21 @@ def main(argv=None):
             #mask = tf.ceil(x_raw)
             #return tf.mul(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), mask)
             #return tf.maximum(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), 0.0)
-            #return tf.mul(tf.pow(x_raw, tf_pow), tf_prod)
-            return tf.pow(x_raw, tf_pow)
+            #return tf.mul(tf.pow(x_raw, tf_pow), tf.maximum(tf_prod, epsilon))
+            #return tf.pow(x_raw, tf_pow)
             #-------
             width = 1
             in_channels = 1
             out_channels = 5 # FLAGS.hidden / 20
-            filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
-            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
+            #filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
+            filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(out_channels)))
+            #proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
+            proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
             conv = tf.nn.conv1d(tf_tensor, filters=filter_weights, stride=1, padding='VALID')
-            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
+            relu = tf.nn.dropout(tf.nn.relu(conv), keep_prob=keep_p)
             reshape = tf.reshape(relu, [-1, out_channels])
-            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
+            proj = tf.matmul(reshape, proj_weights)
             return tf.reshape(proj, [-1, x_size])
 
         def idf_like(info_arr):
@@ -103,14 +105,10 @@ def main(argv=None):
 
         def normalization_like(v, epsilon=1e-12):
             # L^p norm
-            print 'shape'
-            print v.get_shape()
-            vv = tf.pow(tf.abs(v),var_p)
-            print vv.get_shape()
+            p = 2.0#var_p
+            vv = tf.pow(v,p)
             sum_vv = tf.reduce_sum(vv, 1, keep_dims=True)
-            print sum_vv.get_shape()
-            den = tf.pow(sum_vv, 1.0/tf.maximum(var_p, epsilon))
-            print den.get_shape()
+            den = tf.pow(sum_vv, 1.0/tf.maximum(p, epsilon))
             return tf.div(v,tf.maximum(den, epsilon))
 
         normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
@@ -155,12 +153,12 @@ def main(argv=None):
         for step in range(1,FLAGS.maxsteps):
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             #_, l, tf_po, tf_pr  = session.run([optimizer, loss, tf_pow, tf_prod], feed_dict=tr_dict)
-            _, l, tf_po, tf_pr, tf_of = session.run([optimizer, loss, tf_pow, tf_prod, tf_offset], feed_dict=tr_dict)
+            _, l, p, tf_po, tf_pr, tf_of = session.run([optimizer, loss, var_p, tf_pow, tf_prod, tf_offset], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
             if step % show_step == 0:
-                print('[step=%d][ep=%d][tf:pow %.3f, tf:w %.3f tf:o: %.3f] loss=%.10f' % (step, data.epoch, tf_po, tf_pr, tf_of, l_ave / show_step))
+                print('[step=%d][ep=%d][p %.3f tf:pow %.3f, tf:w %.3f tf:o: %.3f] loss=%.10f' % (step, data.epoch, p, tf_po, tf_pr, tf_of, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
@@ -251,7 +249,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
-    flags.DEFINE_float('lrate', .0005, 'Initial learning rate (default .0005)') #3e-4
+    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
