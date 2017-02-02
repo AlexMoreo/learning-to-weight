@@ -25,7 +25,8 @@ def main(argv=None):
                    FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
 
     # check if the vector has already been calculated
-    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+    if not FLAGS.f:
+        err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
 
     init_time = time.time()
     pos_cat_code = FLAGS.cat
@@ -112,12 +113,12 @@ def main(argv=None):
             return tf.div(v,tf.maximum(den, epsilon))
 
         normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
-        ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
-        #logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
-        logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
-        logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
+        logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
+        #ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
+        #logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
+        #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
+        logits = tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b)
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), y))
-        #loss = tf.minimum(loss, 2.0)
 
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
@@ -251,7 +252,7 @@ if __name__ == '__main__':
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
-    flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
+    flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
@@ -260,6 +261,7 @@ if __name__ == '__main__':
     flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
+    flags.DEFINE_boolean('f', False, 'Forces the run, i.e., do not check if the vector has already been calculated.')
     flags.DEFINE_string('computation', 'local', 'Computation mode, see documentation (default local)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
