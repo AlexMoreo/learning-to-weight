@@ -226,7 +226,7 @@ def main(argv=None):
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
                 plot.plot(step=step)
-            if FLAGS.plotmode == 'img' and step > 50 and step % plotsteps == 0:
+            if FLAGS.plotmode == 'show' and step > 50 and step % plotsteps == 0:
                 plot.plot(step=step)
 
             #early stop if not improves after 10 validations
