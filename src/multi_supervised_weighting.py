@@ -13,6 +13,7 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 from joblib import Parallel, delayed
+from plot_function import PlotTfIdf
 import multiprocessing
 
 def main(argv=None):
@@ -32,9 +33,9 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
-    #print('L1-normalize')
-    #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    print('L1-normalize')
+    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -52,7 +53,7 @@ def main(argv=None):
 
     x_size = data.num_features()
     batch_size = FLAGS.batchsize if FLAGS.batchsize!=-1 else data.num_tr_documents()
-    drop_keep_p = 0.8
+    drop_keep_p = 1.0 # deactivated...
 
     # graph definition --------------------------------------------------------------
     graph = tf.Graph()
@@ -60,11 +61,13 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
+        freq_input = tf.placeholder(tf.float32, shape=[1,1])
+        tprfpr_input = tf.placeholder(tf.float32, shape=[2])
         keep_p = tf.placeholder(tf.float32)
         var_p = tf.get_variable('p', shape=[1], initializer=tf.constant_initializer(2.0))
-        tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
-        tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
-        tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
+        #tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
+        #tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
+        #tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
 
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
@@ -74,21 +77,28 @@ def main(argv=None):
             #return tf.mul(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), mask)
             #return tf.maximum(tf.add(tf.mul(tf.pow(x_raw, tf_pow), tf_prod), tf_offset), 0.0)
             #return tf.mul(tf.pow(x_raw, tf_pow), tf.maximum(tf_prod, epsilon))
-            #return tf.pow(x_raw, tf_pow)
+            #tflike = tf.pow(tf.mul(x_raw, tf_prod), tf_pow)
+            #tflike = tf.Print(tflike, [x_raw, tf_prod, tf_pow, tflike], message="x_raw, tf_prod, tf_pow, tflike")
+            #return tflike
             #-------
+            x_size = x_raw.get_shape().as_list()[1]
             width = 1
             in_channels = 1
-            out_channels = 5 # FLAGS.hidden / 20
-            #filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
-            filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(out_channels)))
-            #proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
-            proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
+            out_channels = 10 # FLAGS.hidden / 20
+            filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
+            #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(out_channels)))
+            #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_uniform_initializer(minval=0.1, maxval=1 / math.sqrt(out_channels)))
+            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
+            #proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
+            #proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1],initializer=tf.random_uniform_initializer(minval=0.1, maxval=.5))
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
             conv = tf.nn.conv1d(tf_tensor, filters=filter_weights, stride=1, padding='VALID')
-            relu = tf.nn.dropout(tf.nn.relu(conv), keep_prob=keep_p)
+            relu = tf.nn.dropout(tf.nn.relu(conv+filter_biases), keep_prob=keep_p)
             reshape = tf.reshape(relu, [-1, out_channels])
-            proj = tf.matmul(reshape, proj_weights)
-            return tf.reshape(proj, [-1, x_size])
+            proj = tf.nn.relu(tf.matmul(reshape, proj_weights)+proj_biases)
+            tflike = tf.reshape(proj, [-1, x_size])
+            tflike = tf.Print(tflike, [x_raw, tflike], message="tf-like: x_raw, tflike")
+            return tflike
 
         def idf_like(info_arr):
             width = info_by_feat
@@ -96,34 +106,53 @@ def main(argv=None):
             out_channels = FLAGS.hidden
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_idf_filter')
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
+            #proj_weights = tf.get_variable('local_idf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
             n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
             idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
             conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
             reshape = tf.reshape(relu, [n_results, out_channels])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
-            return tf.reshape(proj, [n_results])
+            #proj = tf.matmul(reshape, proj_weights)
+            idf = tf.reshape(proj, [n_results])
+            #idf = tf.Print(idf, [idf, proj, relu, conv, proj_weights, filter_weights, filter_biases], message="idf-like:idf, proj, relu, conv, proj_weights, filter_weights, filter_biases ")
+            return idf
 
         def normalization_like(v, epsilon=1e-12):
             # L^p norm
-            p = 2.0#var_p
-            vv = tf.pow(v,p)
-            sum_vv = tf.reduce_sum(vv, 1, keep_dims=True)
-            den = tf.pow(sum_vv, 1.0/tf.maximum(p, epsilon))
-            return tf.div(v,tf.maximum(den, epsilon))
+            p = tf.maximum(var_p, epsilon)
+            vv = tf.pow(tf.abs(v),p)
+            sum_vv = tf.maximum(tf.reduce_sum(vv, 1, keep_dims=True), epsilon)
+            den = tf.maximum(tf.pow(sum_vv, 1.0/p), epsilon)
+            norm = tf.div(v,den)
+            norm = tf.Print(norm, [p, tf.reduce_sum(v, 1), sum_vv, den], message="p, sum(v), sum_vv, den: ")
+            return norm
 
-        normalized = normalization_like(tf.mul(tf_like(x), idf_like(feat_info)))
+        tf_tensor = tf_like(x)
+        idf_tensor = idf_like(feat_info)
+        tf_ave = tf.reduce_mean(tf_tensor)
+        idf_ave = tf.reduce_mean(idf_tensor)
+        normalized = normalization_like(tf.mul(tf_tensor, idf_tensor))
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
         #ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
         #logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
         #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
         logits = tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b)
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), y))
+        loss = tf.Print(loss, [loss], message="loss: ")
 
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
-        optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+        #for plot
+        tf.get_variable_scope().reuse_variables()
+        tf_pred = tf_like(freq_input)
+        idf_pred = idf_like(tprfpr_input)
+
+        optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate) #.minimize(loss)
+        gvs = optimizer.compute_gradients(loss, tf.trainable_variables())
+        capped_grads_and_vars = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in gvs]
+        optimizer = optimizer.apply_gradients(capped_grads_and_vars)
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -139,14 +168,21 @@ def main(argv=None):
     create_if_not_exists(FLAGS.outdir)
     pc = data.devel_class_prevalence()
 
+    def tf_wrapper(x):
+        return tf_pred.eval(feed_dict={freq_input: [[x]], keep_p: 1.0})[0][0]
+
+    def idf_wrapper(x):
+        return idf_pred.eval(feed_dict={tprfpr_input: x, keep_p: 1.0})
+
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
 
         # train -------------------------------------------------
-        show_step = plotsteps = 10
+        show_step = 10
         valid_step = show_step * 10
+        plotsteps = valid_step
         last_improvement = 0
         early_stop_steps = 20
         l_ave=0.0
@@ -154,15 +190,18 @@ def main(argv=None):
         best_f1 = 0.0
         log_steps = 0
         savedstep = -1
+        plot = PlotTfIdf(FLAGS.plotmode, FLAGS.plotdir, tf_wrapper, idf_wrapper, tf_points=[0,1], idf_points=feat_corr_info)
         for step in range(1,FLAGS.maxsteps):
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             #_, l, tf_po, tf_pr  = session.run([optimizer, loss, tf_pow, tf_prod], feed_dict=tr_dict)
-            _, l, p, tf_po, tf_pr, tf_of = session.run([optimizer, loss, var_p, tf_pow, tf_prod, tf_offset], feed_dict=tr_dict)
+            #_, l, p, tf_po, tf_pr, tf_of = session.run([optimizer, loss, var_p, tf_pow, tf_prod, tf_offset], feed_dict=tr_dict)
+            _, l, p, tf_, idf_ = session.run([optimizer, loss, var_p, tf_ave, idf_ave], feed_dict=tr_dict)
             l_ave += l
             log_steps += 1
 
             if step % show_step == 0:
-                print('[step=%d][ep=%d][p %.3f tf:pow %.3f, tf:w %.3f tf:o: %.3f] loss=%.10f' % (step, data.epoch, p, tf_po, tf_pr, tf_of, l_ave / show_step))
+                #print('[step=%d][ep=%d][p %.3f tf:pow %.3f, tf:w %.3f tf:o: %.3f] loss=%.10f' % (step, data.epoch, p, tf_po, tf_pr, tf_of, l_ave / show_step))
+                print('[step=%d][ep=%d][p %.3f tf %.3f idf %.3f] loss=%.10f' % (step, data.epoch, p, tf_, idf_, l_ave / show_step))
                 l_ave = 0.0
 
             if step % valid_step == 0:
@@ -188,6 +227,8 @@ def main(argv=None):
 
             #if FLAGS.plotmode=='vid' and step % plotsteps == 0:
             #    plot.plot(step=step)
+            if FLAGS.plotmode == 'show' and step > 50 and step % plotsteps == 0:
+                plot.plot(step=step)
 
             #early stop if not improves after 10 validations
             if last_improvement >= early_stop_steps:
@@ -253,7 +294,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
-    flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
+    flags.DEFINE_float('lrate', .001, 'Initial learning rate (default .001)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')

@@ -173,7 +173,7 @@ def main(argv=None):
         def idf_wrapper(x):
             return idf_prediction.eval(feed_dict={x_func: [x], keep_p: 1.0})
         plot = PlotIdf(FLAGS.plotmode, FLAGS.plotdir,
-                       supervised_idf if FLAGS.pretrain!='off' else None, idf_wrapper, plotpoints=feat_corr_info)
+                       supervised_idf if FLAGS.pretrain!='off' else None, idf_wrapper, idf_points=feat_corr_info)
         plotsteps = 100
         if FLAGS.pretrain != 'off':
             if FLAGS.plotmode in ['img', 'show']: plot.plot(step=0)
