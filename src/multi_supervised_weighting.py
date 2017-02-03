@@ -52,7 +52,7 @@ def main(argv=None):
 
     x_size = data.num_features()
     batch_size = FLAGS.batchsize if FLAGS.batchsize!=-1 else data.num_tr_documents()
-    drop_keep_p = 1.0 # deactivated...
+    drop_keep_p = 0.9
 
     # graph definition --------------------------------------------------------------
     graph = tf.Graph()
@@ -83,7 +83,7 @@ def main(argv=None):
             x_size = x_raw.get_shape().as_list()[1]
             width = 1
             in_channels = 1
-            out_channels = 10 # FLAGS.hidden / 20
+            out_channels = 30 # FLAGS.hidden / 20
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
             #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(out_channels)))
             #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_uniform_initializer(minval=0.1, maxval=1 / math.sqrt(out_channels)))
@@ -96,7 +96,7 @@ def main(argv=None):
             reshape = tf.reshape(relu, [-1, out_channels])
             proj = tf.nn.relu(tf.matmul(reshape, proj_weights)+proj_biases)
             tflike = tf.reshape(proj, [-1, x_size])
-            tflike = tf.Print(tflike, [x_raw, tflike], message="tf-like: x_raw, tflike")
+            #tflike = tf.Print(tflike, [x_raw, tflike], message="tf-like: x_raw, tflike")
             return tflike
 
         def idf_like(info_arr):
@@ -124,7 +124,7 @@ def main(argv=None):
             sum_vv = tf.maximum(tf.reduce_sum(vv, 1, keep_dims=True), epsilon)
             den = tf.maximum(tf.pow(sum_vv, 1.0/p), epsilon)
             norm = tf.div(v,den)
-            norm = tf.Print(norm, [p, tf.reduce_sum(v, 1), sum_vv, den], message="p, sum(v), sum_vv, den: ")
+            #norm = tf.Print(norm, [p, tf.reduce_sum(v, 1), sum_vv, den], message="p, sum(v), sum_vv, den: ")
             return norm
 
         tf_tensor = tf_like(x)
@@ -138,7 +138,7 @@ def main(argv=None):
         #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
         logits = tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b)
         loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), y))
-        loss = tf.Print(loss, [loss], message="loss: ")
+        #loss = tf.Print(loss, [loss], message="loss: ")
 
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
@@ -241,7 +241,7 @@ def main(argv=None):
         print 'Test evaluation:'
         if savedstep>0:
             restore_checkpoint(saver, session, FLAGS.checkpointdir)
-        #if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
+        if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
         eval_dict = as_feed_dict(data.test_batch(), dropout=False)
         predictions = prediction.eval(feed_dict=eval_dict)
         acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
