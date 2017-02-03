@@ -13,7 +13,6 @@ import sys
 from weighted_vectors import WeightedVectors
 from classification_benchmark import *
 from joblib import Parallel, delayed
-from plot_function import PlotTfIdf
 import multiprocessing
 
 def main(argv=None):
@@ -225,9 +224,9 @@ def main(argv=None):
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
-            #if FLAGS.plotmode=='vid' and step % plotsteps == 0:
-            #    plot.plot(step=step)
-            if FLAGS.plotmode == 'show' and step > 50 and step % plotsteps == 0:
+            if FLAGS.plotmode=='vid' and step % plotsteps == 0:
+                plot.plot(step=step)
+            if FLAGS.plotmode == 'img' and step > 50 and step % plotsteps == 0:
                 plot.plot(step=step)
 
             #early stop if not improves after 10 validations
@@ -331,5 +330,5 @@ if __name__ == '__main__':
 
     if FLAGS.plotmode != 'show':
         os.environ['MATPLOTLIB_USE'] = 'Agg'
-    from plot_function import PlotIdf
+    from plot_function import PlotTfIdf
     tf.app.run()
