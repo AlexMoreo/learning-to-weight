@@ -35,6 +35,9 @@ def main(argv=None):
     #print('L1-normalize')
     #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
     #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    #max_term_frequency = 1.0
+    max_term_frequency = np.amax(data.devel_vec)
+    print max_term_frequency
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -197,7 +200,7 @@ def main(argv=None):
         best_f1 = 0.0
         log_steps = 0
         savedstep = -1
-        plot = PlotTfIdf(FLAGS.plotmode, FLAGS.plotdir, tf_wrapper, idf_wrapper, tf_points=[0,1], idf_points=feat_corr_info)
+        plot = PlotTfIdf(FLAGS.plotmode, FLAGS.plotdir, tf_wrapper, idf_wrapper, tf_points=[0,max_term_frequency], idf_points=feat_corr_info)
         for step in range(1,FLAGS.maxsteps):
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             #_, l, tf_po, tf_pr  = session.run([optimizer, loss, tf_pow, tf_prod], feed_dict=tr_dict)
