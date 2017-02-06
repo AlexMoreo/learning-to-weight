@@ -60,7 +60,6 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
-        null_x = tf.constant(0.0, shape=x.shape)
         freq_input = tf.placeholder(tf.float32, shape=[1,1])
         tprfpr_input = tf.placeholder(tf.float32, shape=[2])
         keep_p = tf.placeholder(tf.float32)
@@ -98,6 +97,7 @@ def main(argv=None):
             proj = tf.nn.relu(tf.matmul(reshape, proj_weights)+proj_biases)
             tflike = tf.reshape(proj, [-1, x_size])
             #tflike = tf.Print(tflike, [x_raw, tflike], message="tf-like: x_raw, tflike")
+            #tf.get_variable_scope().reuse_variables()
             return tflike
 
         def idf_like(info_arr):
@@ -128,7 +128,14 @@ def main(argv=None):
             #norm = tf.Print(norm, [p, tf.reduce_sum(v, 1), sum_vv, den], message="p, sum(v), sum_vv, den: ")
             return norm
 
-        tf_tensor = tf_like(x) - tf_like(null_x) #removes the offset so that the tf factor for frequency 0 is 0
+        def tf_like_nooffset(x):
+            with tf.variable_scope("tflike_scope") as scope:
+                tf_tensor = tf_like(x)
+                scope.reuse_variables()
+                tf_tensor = tf_tensor - tf_like(tf.zeros_like(x)) #removes the offset so that the tf factor for frequency 0 is 0
+            return tf_tensor
+
+        tf_tensor = tf_like_nooffset(x)
         idf_tensor = idf_like(feat_info)
         tf_ave = tf.reduce_mean(tf_tensor)
         idf_ave = tf.reduce_mean(idf_tensor)
@@ -146,7 +153,7 @@ def main(argv=None):
 
         #for plot
         tf.get_variable_scope().reuse_variables()
-        tf_pred = tf_like(freq_input)
+        tf_pred = tf_like_nooffset(freq_input)
         idf_pred = idf_like(tprfpr_input)
 
         optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate) #.minimize(loss)
