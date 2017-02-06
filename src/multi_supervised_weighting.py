@@ -32,9 +32,9 @@ def main(argv=None):
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
     data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
-    print('L1-normalize')
-    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    #print('L1-normalize')
+    #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+    #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -60,6 +60,7 @@ def main(argv=None):
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None])
+        null_x = tf.constant(0.0, shape=x.shape)
         freq_input = tf.placeholder(tf.float32, shape=[1,1])
         tprfpr_input = tf.placeholder(tf.float32, shape=[2])
         keep_p = tf.placeholder(tf.float32)
@@ -127,7 +128,7 @@ def main(argv=None):
             #norm = tf.Print(norm, [p, tf.reduce_sum(v, 1), sum_vv, den], message="p, sum(v), sum_vv, den: ")
             return norm
 
-        tf_tensor = tf_like(x)
+        tf_tensor = tf_like(x) - tf_like(null_x) #removes the offset so that the tf factor for frequency 0 is 0
         idf_tensor = idf_like(feat_info)
         tf_ave = tf.reduce_mean(tf_tensor)
         idf_ave = tf.reduce_mean(idf_tensor)
