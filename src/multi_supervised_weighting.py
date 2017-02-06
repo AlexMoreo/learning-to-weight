@@ -269,12 +269,22 @@ def main(argv=None):
             results.commit()
 
         print 'Weighting documents'
+        def weight_vectors(raw_vectors, blocksize=1000):
+            n_vec = raw_vectors.shape[0]
+            weighted = []
+            offset = 0
+            while offset < n_vec:
+                weighted.append(normalized.eval(feed_dict={x: raw_vectors[offset:offset+blocksize], keep_p: 1.0}))
+                offset+=blocksize
+            res = np.concatenate(weighted,axis=0)
+            return res
+
         train_x, train_y = data.get_train_set()
-        train_x_weighted = normalized.eval(feed_dict={x: train_x, keep_p: 1.0})
+        train_x_weighted = weight_vectors(train_x)
         val_x, val_y   = data.get_validation_set()
-        val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
+        val_x_weighted = weight_vectors(val_x)
         test_x, test_y   = data.test_batch()
-        test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
+        test_x_weighted  = weight_vectors(test_x)
         wv = WeightedVectors(vectorizer='full_LtoW', from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
