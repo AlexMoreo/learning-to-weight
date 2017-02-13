@@ -153,6 +153,7 @@ def shuffle_tied(l1, l2, random_seed=None):
     l1_, l2_ = zip(*l1_l2_tied)
     return list(l1_), list(l2_)
 
+"""
 def evaluation_metrics(predictions, true_labels):
     no_test_examples = (sum(true_labels) == 0)
     no_predictions = (sum(predictions) == 0)
@@ -170,10 +171,7 @@ def evaluation_metrics(predictions, true_labels):
     else:
         r = recall_score(true_labels, predictions, average='binary', pos_label=1)
     return acc, f1, p, r
-
-def contingency_table(predictions, true_labels):
-    t = confusion_matrix(true_labels, predictions, labels=[0,1])
-    return {'tp':t[1, 1], 'tn':t[0, 0], 'fn':t[1,0], 'fp':t[0,1]}
+"""
 
 
 

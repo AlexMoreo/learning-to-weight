@@ -1,17 +1,8 @@
-import numpy as np
-import numpy as np
-import tensorflow as tf
-from helpers import *
-from pprint import pprint
-import time
 from time import gmtime, strftime
-import feature_selection_function
-from dataset_loader import *
-from sklearn.metrics import *
-from sklearn.preprocessing import normalize
-import sys
-from weighted_vectors import WeightedVectors
-from classification_benchmark import *
+
+from src.classification_benchmark import *
+from src.feature_selection import tsr_function
+
 
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
@@ -34,7 +25,7 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
     print('Getting supervised correlations')
-    idf_like_func = getattr(feature_selection_function, FLAGS.idflike)
+    idf_like_func = getattr(tsr_function, FLAGS.idflike)
     pc = data.devel_class_prevalence()
     sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
     feat_corr_info = [idf_like_func(sup_i.tpr(), sup_i.fpr(), pc) for sup_i in sup]

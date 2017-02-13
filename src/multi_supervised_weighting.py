@@ -1,19 +1,15 @@
-import numpy as np
-import numpy as np
-import tensorflow as tf
-from helpers import *
-from pprint import pprint
 import time
 from time import gmtime, strftime
-import feature_selection_function
-from dataset_loader import *
-from sklearn.metrics import *
-from sklearn.preprocessing import normalize
-import sys
-from weighted_vectors import WeightedVectors
-from classification_benchmark import *
+
+import numpy as np
 from joblib import Parallel, delayed
-import multiprocessing
+from path import join
+
+from data.dataset_loader import DatasetLoader
+from src.utils.helpers import *
+from src.utils.helpers import err_exit
+from src.utils.result_table import ResultTable
+
 
 def main(argv=None):
     err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
@@ -37,7 +33,6 @@ def main(argv=None):
     #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     #max_term_frequency = 1.0
     max_term_frequency = np.amax(data.devel_vec)
-    print max_term_frequency
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -45,10 +40,17 @@ def main(argv=None):
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
     print('Getting supervised correlations')
-    num_cores = multiprocessing.cpu_count()
-    #sup = Parallel(n_jobs=num_cores, backend="threading")(
-    #    delayed(data.feature_label_contingency_table)(f, cat_label=1) for f in range(data.num_features()))
-    sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
+
+
+    def wrap_contingency_table(f, feat_vec, cat_doc_set, nD):
+        feat_doc_set = set(feat_vec[:, f].nonzero()[0])
+        return feature_label_contingency_table(cat_doc_set, feat_doc_set, nD)
+
+
+
+    sup = Parallel(n_jobs=num_cores, backend="threading")(
+        delayed(data.feature_label_contingency_table)(f, cat_label=1) for f in range(data.num_features()))
+    #sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
     feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
 
     info_by_feat = len(feat_corr_info[0])
@@ -272,7 +274,7 @@ def main(argv=None):
 
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
-            results = ReusltTable(FLAGS.resultcontainer)
+            results = ResultTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
@@ -351,5 +353,5 @@ if __name__ == '__main__':
 
     if FLAGS.plotmode != 'show':
         os.environ['MATPLOTLIB_USE'] = 'Agg'
-    from plot_function import PlotTfIdf
+    from src.utils.plot_function import PlotTfIdf
     tf.app.run()

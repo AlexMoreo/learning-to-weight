@@ -1,13 +1,13 @@
 from __future__ import division
 
-import tensorflow as tf
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from helpers import *
-import numpy as np
 import itertools
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib import cm
 from scipy.stats import norm
+
+from src.utils.helpers import *
 
 x_size = 2
 

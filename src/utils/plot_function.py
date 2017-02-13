@@ -1,12 +1,14 @@
-import numpy as np
 import itertools
-from helpers import *
 import os
+
 import matplotlib
+import numpy as np
+
+from src.utils.helpers import *
+
 if 'MATPLOTLIB_USE' in os.environ:
     matplotlib.use(os.environ['MATPLOTLIB_USE'])
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
 
 class PlotIdf:

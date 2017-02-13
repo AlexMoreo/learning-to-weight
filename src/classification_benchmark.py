@@ -1,19 +1,17 @@
 from __future__ import print_function
-import sys
+
 import argparse
+
 from sklearn import svm
+from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.decomposition import PCA
-import numpy as np
-import time
-from dataset_loader import *
-from weighted_vectors import WeightedVectors
-from result_table import ReusltTable
+
+from src.data.dataset_loader import *
+from src.data.weighted_vectors import WeightedVectors
+from src.utils.result_table import ResultTable
 
 #TODO: improve with GridSearchCV or RandomizedSearchCV
 
@@ -354,7 +352,7 @@ if __name__ == '__main__':
                        'knn': not args.no_knn})
 
     print("Loading result file from "+args.resultfile)
-    results = ReusltTable(args.resultfile)
+    results = ResultTable(args.resultfile)
 
     if args.dataset:
         print("Runing classification benchmark on baselines")

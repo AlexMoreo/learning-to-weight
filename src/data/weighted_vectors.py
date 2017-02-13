@@ -1,8 +1,10 @@
-import os
 import cPickle as pickle
+import os
+
 import numpy as np
-from helpers import create_if_not_exists
 from scipy.sparse import csr_matrix, vstack
+
+from src.utils.helpers import create_if_not_exists
 
 
 class WeightedVectors:

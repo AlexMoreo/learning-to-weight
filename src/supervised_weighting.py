@@ -1,17 +1,10 @@
-import numpy as np
-import numpy as np
-import tensorflow as tf
-from helpers import *
-from pprint import pprint
-import time
 from time import gmtime, strftime
-import feature_selection_function
-from dataset_loader import *
-from sklearn.metrics import *
+
 from sklearn.preprocessing import normalize
-import sys
-from weighted_vectors import WeightedVectors
+
 from classification_benchmark import *
+from src.feature_selection import tsr_function
+
 
 #TODO: if pow works, check with relu, and check with 1+log(tf)
 #TODO: check the mul in tf_like, change to pow; debug (el mul no hace absolutamente nada, porque al normalizar se pierde)
@@ -149,7 +142,7 @@ def main(argv=None):
 
     def supervised_idf(tpr, fpr):
         if FLAGS.pretrain == 'off': return 0.0
-        fsmethod = getattr(feature_selection_function, FLAGS.pretrain)
+        fsmethod = getattr(tsr_function, FLAGS.pretrain)
         return apply_tsr(tpr, fpr, pc, fsmethod)
 
     def pretrain_batch(batch_size=1):
@@ -285,7 +278,7 @@ def main(argv=None):
 
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
-            results = ReusltTable(FLAGS.resultcontainer)
+            results = ResultTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
@@ -353,5 +346,5 @@ if __name__ == '__main__':
 
     if FLAGS.plotmode != 'show':
         os.environ['MATPLOTLIB_USE'] = 'Agg'
-    from plot_function import PlotIdf
+    from src.utils.plot_function import PlotIdf
     tf.app.run()

@@ -4,7 +4,7 @@ from time import gmtime, strftime
 import pandas as pd
 import numpy as np
 
-class ReusltTable:
+class ResultTable:
     def __init__(self, result_container):
         self.result_container = result_container
 

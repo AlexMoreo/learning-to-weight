@@ -4,17 +4,15 @@
 
 from __future__ import print_function
 
-import sys
-from glob import glob
 import os.path
 import re
 import tarfile
-from helpers import *
 
-
+from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import html_parser
 from sklearn.externals.six.moves import urllib
-from sklearn.datasets import get_data_home
+
+from src.utils.helpers import *
 
 def _not_in_sphinx():
     # Hack to detect whether we are running by the sphinx builder

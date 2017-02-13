@@ -1,11 +1,8 @@
-import numpy as np
-import tensorflow as tf
-from helpers import *
-from helpers import *
-from pprint import pprint
 import time
-from dataset_loader import Dataset
-from sklearn.metrics import f1_score
+
+from src.data.dataset_loader import Dataset
+from src.utils.helpers import *
+
 
 #TODO: clustering and two losses
 
