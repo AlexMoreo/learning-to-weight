@@ -12,7 +12,7 @@ from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import html_parser
 from sklearn.externals.six.moves import urllib
 
-from src.utils.helpers import *
+from utils.helpers import *
 
 def _not_in_sphinx():
     # Hack to detect whether we are running by the sphinx builder

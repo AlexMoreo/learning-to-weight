@@ -15,11 +15,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.feature_extraction.text import TfidfTransformer
 
-from src.custom_vectorizers import *
-from src.data.reuters21578_parser import ReutersParser
-from src.utils.helpers import *
-from src.feature_selection.round_robin import RoundRobin
-from src.feature_selection.tsr_function import *
+from custom_vectorizers import *
+from data.reuters21578_parser import ReutersParser
+from utils.helpers import *
+from feature_selection.round_robin import RoundRobin
+from feature_selection.tsr_function import *
 
 class Dataset:
     def __init__(self, data, target, target_names):

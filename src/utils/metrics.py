@@ -1,4 +1,4 @@
-from src.feature_selection.tsr_function import ContTable
+from feature_selection.tsr_function import ContTable
 
 """
 Scikit learn provides a full set of evaluation metrics, but they treat special cases differently.

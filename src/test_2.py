@@ -5,10 +5,10 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.svm import LinearSVC
 
 from data.dataset_loader import DatasetLoader
-from src.utils.metrics import macroF1, microF1
+from utils.metrics import macroF1, microF1
 import sys
 
-data = DatasetLoader(dataset='reuters21578', vectorize='tfcw', rep_mode='sparse', feat_sel=0.1)
+data = DatasetLoader(dataset='reuters21578', vectorize='tfchi2', rep_mode='sparse', feat_sel=0.1)
 Xtr, ytr = data.devel_vec, data.devel.target
 Xte, yte = data.test_vec, data.test.target
 
