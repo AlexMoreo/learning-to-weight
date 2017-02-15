@@ -3,12 +3,15 @@ from time import gmtime, strftime
 
 import numpy as np
 from joblib import Parallel, delayed
-from path import join
+from os.path import join
 
 from data.dataset_loader import DatasetLoader
-from src.utils.helpers import *
-from src.utils.helpers import err_exit
-from src.utils.result_table import ResultTable
+from data.weighted_vectors import WeightedVectors
+from utils.helpers import *
+from utils.helpers import err_exit
+from utils.result_table import ResultTable
+from utils.metrics import macroF1, microF1
+from feature_selection.tsr_function import ContTable
 
 
 def main(argv=None):
@@ -41,21 +44,14 @@ def main(argv=None):
 
     print('Getting supervised correlations')
 
+    nC = data.num_categories()
+    nF = data.num_features()
 
-    def wrap_contingency_table(f, feat_vec, cat_doc_set, nD):
-        feat_doc_set = set(feat_vec[:, f].nonzero()[0])
-        return feature_label_contingency_table(cat_doc_set, feat_doc_set, nD)
+    matrix_4cell = data.get_4cell_matrix()
+    feat_corr_info = np.array([[[matrix_4cell[c, f].tpr(), matrix_4cell[c, f].fpr()] for f in range(nF)] for c in range(nC)])
+    info_by_feat = feat_corr_info.shape[-1]
 
-
-
-    sup = Parallel(n_jobs=num_cores, backend="threading")(
-        delayed(data.feature_label_contingency_table)(f, cat_label=1) for f in range(data.num_features()))
-    #sup = [data.feature_label_contingency_table(f, cat_label=1) for f in range(data.num_features())]
-    feat_corr_info = [[sup_i.tpr(), sup_i.fpr()] for sup_i in sup]
-
-    info_by_feat = len(feat_corr_info[0])
-
-    x_size = data.num_features()
+    x_size = nF
     batch_size = FLAGS.batchsize if FLAGS.batchsize!=-1 else data.num_tr_documents()
     drop_keep_p = 0.9
 
@@ -64,7 +60,7 @@ def main(argv=None):
     with graph.as_default():
         # Placeholders
         x = tf.placeholder(tf.float32, shape=[None, x_size])
-        y = tf.placeholder(tf.float32, shape=[None])
+        y = tf.placeholder(tf.float32, shape=[None, nC])
         freq_input = tf.placeholder(tf.float32, shape=[1,1])
         tprfpr_input = tf.placeholder(tf.float32, shape=[2])
         keep_p = tf.placeholder(tf.float32)
@@ -73,7 +69,7 @@ def main(argv=None):
         #tf_prod = tf.get_variable('tf_prod', shape=[1], initializer=tf.constant_initializer(1.0))
         #tf_offset = tf.get_variable('tf_sum', shape=[1], initializer=tf.constant_initializer(0.0))
 
-        feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
+        feat_info = tf.constant(feat_corr_info, dtype=tf.float32)
 
         def tf_like(x_raw, epsilon=1e-12):
 
@@ -88,13 +84,9 @@ def main(argv=None):
             x_size = x_raw.get_shape().as_list()[1]
             width = 1
             in_channels = 1
-            out_channels = 30 # FLAGS.hidden / 20
+            out_channels = 10 # FLAGS.hidden / 20
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
-            #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(out_channels)))
-            #filter_weights = tf.get_variable('local_tf_filter', [width, in_channels, out_channels], initializer=tf.random_uniform_initializer(minval=0.1, maxval=1 / math.sqrt(out_channels)))
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
-            #proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
-            #proj_weights = tf.get_variable('local_tf_proj', [out_channels, 1],initializer=tf.random_uniform_initializer(minval=0.1, maxval=.5))
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
             conv = tf.nn.conv1d(tf_tensor, filters=filter_weights, stride=1, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(conv+filter_biases), keep_prob=keep_p)
@@ -106,22 +98,31 @@ def main(argv=None):
             return tflike
 
         def idf_like(info_arr):
-            width = info_by_feat
-            in_channels = 1
+            in_channels = info_by_feat
             out_channels = FLAGS.hidden
-            filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_idf_filter')
+
+            #filter shape=(filter_height, filter_width, in_channels, out_channels)
+            filter_weights, filter_biases = get_projection_weights([1, 1, in_channels, out_channels], 'local_idf_filter')
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
-            #proj_weights = tf.get_variable('local_idf_proj', [out_channels, 1], initializer=tf.random_normal_initializer(stddev=1.))
-            n_results = info_arr.get_shape().as_list()[-1] / info_by_feat
-            idf_tensor = tf.reshape(info_arr, shape=[1, -1, 1])
-            conv = tf.nn.conv1d(idf_tensor, filters=filter_weights, stride=info_by_feat, padding='VALID')
+
+            #idf_tensor shape=(batch, height, width, channels) in NHWC format (default)
+            idf_tensor = tf.reshape(info_arr, shape=[1, nC, nF, info_by_feat])
+            strides = [1, 1, 1, 1]
+
+            conv = tf.nn.conv2d(idf_tensor, filter=filter_weights, strides=strides, padding='VALID')
             relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
-            reshape = tf.reshape(relu, [n_results, out_channels])
+            reshape = tf.reshape(relu, [-1, out_channels])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             #proj = tf.matmul(reshape, proj_weights)
-            idf = tf.reshape(proj, [n_results])
+            proj_t = tf.transpose(tf.reshape(proj, [nC, nF]))
+
+            pool_hiddensize = FLAGS.hidden / 2
+            pool_w, pool_b = get_projection_weights([nC, pool_hiddensize], 'pool_proj_h')
+            pool_hw, pool_hb = get_projection_weights([pool_hiddensize, 1], 'pool_proj_o')
+            pooled_h = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(proj_t, pool_w) , pool_b)), keep_prob=keep_p)
+            pooled = tf.squeeze(tf.nn.bias_add(tf.matmul(pooled_h, pool_hw), pool_hb))
             #idf = tf.Print(idf, [idf, proj, relu, conv, proj_weights, filter_weights, filter_biases], message="idf-like:idf, proj, relu, conv, proj_weights, filter_weights, filter_biases ")
-            return idf
+            return pooled
 
         def normalization_like(v, epsilon=1e-12):
             # L^p norm
@@ -142,29 +143,38 @@ def main(argv=None):
 
         tf_tensor = tf_like_nooffset(x)
         idf_tensor = idf_like(feat_info)
+        print "tf_tensor", tf_tensor.get_shape()
+        print "idf_tensor", idf_tensor.get_shape()
+
+
+        # ojo ^
+
+
         tf_ave = tf.reduce_mean(tf_tensor)
         idf_ave = tf.reduce_mean(idf_tensor)
         normalized = normalization_like(tf.mul(tf_tensor, idf_tensor))
-        logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
+        print "normalized", normalized.get_shape()
+        logis_w, logis_b = get_projection_weights([nF, 1], 'logistic')
         #ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
         #logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
         #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
         logits = tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b)
-        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), y))
+        print "logits", logits.get_shape()
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), tf.squeeze(y)))
         #loss = tf.Print(loss, [loss], message="loss: ")
-
+        print "loss", loss.get_shape()
         y_ = tf.nn.sigmoid(logits)
         prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
         #for plot
-        tf.get_variable_scope().reuse_variables()
-        tf_pred = tf_like_nooffset(freq_input)
-        idf_pred = idf_like(tprfpr_input)
+        #tf.get_variable_scope().reuse_variables()
+        #tf_pred = tf_like_nooffset(freq_input)
+        #idf_pred = idf_like(tprfpr_input)
 
-        optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate) #.minimize(loss)
-        gvs = optimizer.compute_gradients(loss, tf.trainable_variables())
-        capped_grads_and_vars = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in gvs]
-        optimizer = optimizer.apply_gradients(capped_grads_and_vars)
+        optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
+        #gvs = optimizer.compute_gradients(loss, tf.trainable_variables())
+        #capped_grads_and_vars = [(tf.clip_by_value(grad, -5, 5), var) for grad, var in gvs]
+        #optimizer = optimizer.apply_gradients(capped_grads_and_vars)
 
         saver = tf.train.Saver(max_to_keep=1)
 
@@ -218,23 +228,25 @@ def main(argv=None):
 
             if step % valid_step == 0:
                 print ('Average time/step %.4fs' % ((time.time()-timeref)/valid_step))
-                eval_dict = as_feed_dict(data.val_batch(), dropout=False)
+                eval_dict = as_feed_dict(data.get_validation_set(), dropout=False)
                 predictions = prediction.eval(feed_dict=eval_dict)
-                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                improves = f1 > best_f1
+                macro_f1 = macroF1(predictions, eval_dict[y])
+                micro_f1 = microF1(predictions, eval_dict[y])
+                improves = macro_f1 > best_f1
                 if improves:
-                    best_f1 = f1
+                    best_f1 = macro_f1
 
-                print('Validation acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f %s' % (acc, f1, p, r, ('[improves]' if improves else '')))
+                print('Validation macro_f1=%.3f, micro_f1=%.3f%s' % (macro_f1, micro_f1, ('[improves]' if improves else '')))
                 last_improvement = 0 if improves else last_improvement + 1
                 if improves:
                     savedstep=step
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
 
-                eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+                eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
                 predictions = prediction.eval(feed_dict=eval_dict)
-                acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-                print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
+                macro_f1 = macroF1(predictions, eval_dict[y])
+                micro_f1 = microF1(predictions, eval_dict[y])
+                print('[Test macro_f1=%.3f, micro_f1=%.3f]' % (macro_f1, micro_f1))
                 timeref = time.time()
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
@@ -255,10 +267,11 @@ def main(argv=None):
         if savedstep>0:
             restore_checkpoint(saver, session, FLAGS.checkpointdir)
         if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
-        eval_dict = as_feed_dict(data.test_batch(), dropout=False)
+        eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
         predictions = prediction.eval(feed_dict=eval_dict)
-        acc, f1, p, r = evaluation_metrics(predictions, eval_dict[y])
-        print('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
+        macro_f1 = macroF1(predictions, eval_dict[y])
+        micro_f1 = microF1(predictions, eval_dict[y])
+        print('Logistic Regression macro_f1=%.3f, micro_f1=%.3f' % (macro_f1, micro_f1))
 
         run_params_dic = {'num_features': data.num_features(),
                           'date': strftime("%d-%m-%Y", gmtime()),
@@ -276,8 +289,8 @@ def main(argv=None):
         if FLAGS.resultcontainer:
             results = ResultTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
-            results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
-                                             cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)
+            results.add_result_metric_scores(acc=-1, f1=macro_f1, prec=-1, rec=-1,
+                                             cont_table=ContTable(-1,-1,-1,-1), init_time=init_time)
             results.set_all(run_params_dic)
             results.commit()
 
@@ -296,7 +309,7 @@ def main(argv=None):
         train_x_weighted = weight_vectors(train_x)
         val_x, val_y   = data.get_validation_set()
         val_x_weighted = weight_vectors(val_x)
-        test_x, test_y   = data.test_batch()
+        test_x, test_y   = data.get_test_set()
         test_x_weighted  = weight_vectors(test_x)
         wv = WeightedVectors(vectorizer='full_LtoW', from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,

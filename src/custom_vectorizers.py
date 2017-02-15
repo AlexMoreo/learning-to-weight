@@ -5,8 +5,7 @@ import scipy
 import sklearn
 import math
 from joblib import Parallel, delayed
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from feature_selection.tsr_function import *
 
 
@@ -87,21 +86,26 @@ informs about its relevance. Accepted policies include "max" (takes the max scor
 (which sums all category scores).
 """
 class TSRweighting:
-    def __init__(self, tsr_function, global_policy='max', supervised_4cell_matrix=None, n_jobs=-1):
+    def __init__(self, tsr_function, global_policy='max', supervised_4cell_matrix=None, sublinear_tf=True, n_jobs=-1):
         if global_policy not in ['max', 'ave', 'wave', 'sum']: raise ValueError('Global policy should be in {"max", "ave", "wave", "sum"}')
         self.tsr_function = tsr_function
         self.global_policy = global_policy
         self.supervised_4cell_matrix = supervised_4cell_matrix
         self.n_jobs=n_jobs
+        self.sublinear_tf=sublinear_tf
 
     def fit(self, X, y):
         print("TSR weighting")
+        if self.sublinear_tf:
+            self.unsupervised_vectorizer = TfidfTransformer(norm=None, use_idf=False, smooth_idf=False, sublinear_tf=True).fit(X)
         if self.supervised_4cell_matrix is None:
+            print("Computing the 4-cell matrix")
             self.supervised_4cell_matrix = get_supervised_matrix(X, y, n_jobs=self.n_jobs)
         else:
             nC=y.shape[1]
             nF = X.shape[1]
             if self.supervised_4cell_matrix.shape != (nC, nF): raise ValueError("Shape of supervised information matrix is inconsistent with X and y")
+        print("Computing the TSR matrix")
         tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self.tsr_function)
         if self.global_policy == 'ave':
             self.global_tsr_matrix = np.average(tsr_matrix, axis=0)
@@ -120,6 +124,8 @@ class TSRweighting:
 
     def transform(self, X):
         if not hasattr(self, 'global_tsr_matrix'): raise NameError('TSRweighting: transform method called before fit.')
+        if self.sublinear_tf:
+            X = self.unsupervised_vectorizer.transform(X)
         X = X.toarray()
         weighted_X = np.multiply(X, self.global_tsr_matrix)
         weighted_X = sklearn.preprocessing.normalize(weighted_X, norm='l2', axis=1, copy=False)

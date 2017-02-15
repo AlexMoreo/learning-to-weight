@@ -58,7 +58,7 @@ class ResultTable:
     def init_row_result(self, classifier_name, data, run=0):
         self.add_empty_entry()
         self.set('classifier', classifier_name)
-        self.set('vectorizer', data.vectorize)
+        self.set('vectorizer', data.vectorizer_name)
         self.set('num_features', data.num_features())
         self.set('dataset', data.name)
         self.set('category', data.positive_cat)
@@ -67,5 +67,5 @@ class ResultTable:
     def add_result_metric_scores(self, acc, f1, prec, rec, cont_table, init_time, notes=''):
         self.append('notes', notes)
         self.set_all({'acc': acc, 'fscore': f1, 'precision': prec, 'recall': rec})
-        self.set_all(cont_table)
+        #self.set_all(cont_table)
         self.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})

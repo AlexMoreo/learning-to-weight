@@ -1,22 +1,44 @@
-import sys
+import sys, os
 import numpy as np
 from joblib import Parallel, delayed
 from tsr_function import *
 import time
+from os.path import join
+import cPickle as pickle
+
+class FeatureSelectorFromRank:
+    def __init__(self, k, features_rank):
+        self._k=k
+        self._features_rank=features_rank
+
+    def fit(self, X, y=None):
+        _, self.nF = X.shape
+        if len(self._features_rank) != self.nF: raise ValueError("Error: features rank incomplete")
+        self._k_best_feats = self._features_rank[:self._k]
+        self._k_best_feats.sort()
+
+    def transform(self, X):
+        _,nF=X.shape
+        if nF != self.nF: raise ValueError("Error: feature domain is not compatible with the fit domain")
+        if not hasattr(self, '_k_best_feats'): raise NameError('Transform method called before fit.')
+        return X[:, self._k_best_feats]
+
+    def fit_transform(self, X, y=None):
+        self.fit(X)
+        return self.transform(X)
 
 class RoundRobin:
-    def __init__(self, k, score_func=information_gain, supervised_4cell_matrix=None):
+    def __init__(self, k, score_func=information_gain, n_jobs=-1):
         self._score_func = score_func
         self._k = k
-        self.supervised_4cell_matrix = supervised_4cell_matrix
+        self.n_jobs=n_jobs
 
     def fit(self, X, y):
         print("Round Robin")
         nF = X.shape[1]
         nC = y.shape[1]
-        print "Getting supervised 4 cell matrix"
-        if self.supervised_4cell_matrix == None:
-            self.supervised_4cell_matrix = get_supervised_matrix(X, y)
+        print("Getting supervised 4 cell matrix (%d x %d)" % (nC, nF))
+        self.supervised_4cell_matrix = get_supervised_matrix(X, y, n_jobs=self.n_jobs)
         print "Getting tsr matrix"
         tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self._score_func)
 
@@ -30,18 +52,24 @@ class RoundRobin:
 
         print "Selecting bests"
         sel_feats = set()
+        self._features_rank = []
         round = 0
-        while len(sel_feats) < self._k:
-            sel_feats.add(tsr_matrix[round].pop()[1])
+        #while len(sel_feats) < self._k:
+        while len(self._features_rank) < nF:
+            feature_index = tsr_matrix[round].pop()[1]
+            if feature_index not in sel_feats:
+                sel_feats.add(feature_index)
+                self._features_rank.append(feature_index)
             round = (round+1) % nC
 
-        self._best_feats = list(sel_feats)
-        self._best_feats.sort()
-        self.supervised_4cell_matrix = self.supervised_4cell_matrix[:,self._best_feats]
+        self.fs_rank = FeatureSelectorFromRank(k=self._k, features_rank=self._features_rank)
+        self.fs_rank.fit(X,y)
+        self._k_best_feats = self.fs_rank._k_best_feats
+        self.supervised_4cell_matrix = self.supervised_4cell_matrix[:, self._k_best_feats]
 
     def transform(self, X):
-        if not hasattr(self, '_best_feats'): raise NameError('Transform method called before fit.')
-        return X[:, self._best_feats]
+        if not hasattr(self, 'fs_rank'): raise NameError('Transform method called before fit.')
+        return self.fs_rank.transform(X)
 
     def fit_transform(self, X, y):
         self.fit(X, y)

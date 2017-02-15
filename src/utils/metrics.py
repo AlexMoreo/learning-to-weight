@@ -1,4 +1,5 @@
 from feature_selection.tsr_function import ContTable
+import numpy as np
 
 """
 Scikit learn provides a full set of evaluation metrics, but they treat special cases differently.
@@ -24,11 +25,22 @@ def single_metric_statistics(true_labels, predicted_labels):
     if tp+fp+fn+tn != len(true_labels): raise ValueError("Format not consistent between true and predicted labels.")
     return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
 
+#if the classifier is single class, then the prediction is a vector of shape=(nD,) which causes issues when compared
+#to the true labels (of shape=(nD,1)). This method increases the dimensions of the predictions.
+def __check_consistency_and_adapt(true_labels, predictions):
+    if predictions.ndim == 1:
+        return __check_consistency_and_adapt(true_labels, np.expand_dims(predictions, axis=1))
+    if true_labels.ndim == 1:
+        return __check_consistency_and_adapt(np.expand_dims(true_labels, axis=1),predictions)
+    if true_labels.shape != predictions.shape:
+        raise ValueError("True and predicted label matrices shapes are inconsistent %s %s."
+                         % (true_labels.shape, predictions.shape))
+    _,nC = true_labels.shape
+    return true_labels, predictions, nC
+
 #true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
 def macroF1(true_labels, predicted_labels):
-    if true_labels.shape != predicted_labels.shape: raise ValueError(
-        "True and predicted label matrices shapes are inconsistent.")
-    nD,nC = true_labels.shape
+    true_labels, predicted_labels, nC = __check_consistency_and_adapt(true_labels, predicted_labels)
 
     macrof1 = 0.0
     for c in range(nC):
@@ -38,9 +50,7 @@ def macroF1(true_labels, predicted_labels):
 
 #true_labels and predicted_labels are two matrices in sklearn.preprocessing.MultiLabelBinarizer format
 def microF1(true_labels, predicted_labels):
-    if true_labels.shape != predicted_labels.shape: raise ValueError(
-        "True and predicted label matrices shapes are inconsistent.")
-    nD, nC = true_labels.shape
+    true_labels, predicted_labels, nC = __check_consistency_and_adapt(true_labels, predicted_labels)
 
     def aggregate_cell(accum, other):
         accum.tp+=other.tp
