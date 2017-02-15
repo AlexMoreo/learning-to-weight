@@ -4,7 +4,7 @@ import os
 import numpy as np
 from scipy.sparse import csr_matrix, vstack
 
-from src.utils.helpers import create_if_not_exists
+from utils.helpers import create_if_not_exists
 
 
 class WeightedVectors:

@@ -366,5 +366,5 @@ if __name__ == '__main__':
 
     if FLAGS.plotmode != 'show':
         os.environ['MATPLOTLIB_USE'] = 'Agg'
-    from src.utils.plot_function import PlotTfIdf
+    from utils.plot_function import PlotTfIdf
     tf.app.run()

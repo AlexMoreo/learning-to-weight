@@ -4,7 +4,7 @@ import os
 import matplotlib
 import numpy as np
 
-from src.utils.helpers import *
+from utils.helpers import *
 
 if 'MATPLOTLIB_USE' in os.environ:
     matplotlib.use(os.environ['MATPLOTLIB_USE'])
