@@ -19,8 +19,8 @@ def main(argv=None):
 
     outname = FLAGS.outname
     if not outname:
-        outname = '%s_C%d_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
-                  (FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
+        outname = '%s_C%s_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
+                  (FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
                    FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
 
     # check if the vector has already been calculated
@@ -154,7 +154,7 @@ def main(argv=None):
         idf_ave = tf.reduce_mean(idf_tensor)
         normalized = normalization_like(tf.mul(tf_tensor, idf_tensor))
         print "normalized", normalized.get_shape()
-        logis_w, logis_b = get_projection_weights([nF, 1], 'logistic')
+        logis_w, logis_b = get_projection_weights([nF, nC], 'logistic')
         #ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
         #logis_w, logis_b = get_projection_weights([1024, 1], 'logistic')
         #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
@@ -326,7 +326,7 @@ if __name__ == '__main__':
 
     flags.DEFINE_string('dataset', '', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default none)')
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
-    flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
+    flags.DEFINE_integer('cat', None, 'Code of the positive category (default None, i.e., multiclass setting).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
     flags.DEFINE_float('lrate', .001, 'Initial learning rate (default .001)') #3e-4
@@ -353,7 +353,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
-    err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
+    err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset]+[None])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('computation', FLAGS.computation, ['local','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])
