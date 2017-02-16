@@ -62,7 +62,7 @@ def main(argv=None):
         x = tf.placeholder(tf.float32, shape=[None, x_size])
         y = tf.placeholder(tf.float32, shape=[None, nC])
         freq_input = tf.placeholder(tf.float32, shape=[1,1])
-        tprfpr_input = tf.placeholder(tf.float32, shape=[2])
+        tprfpr_input = tf.placeholder(tf.float32, shape=[1,1,2])
         keep_p = tf.placeholder(tf.float32)
         var_p = tf.get_variable('p', shape=[1], initializer=tf.constant_initializer(2.0))
         #tf_pow = tf.get_variable('tf_pow', shape=[1], initializer=tf.constant_initializer(1.0))
@@ -84,7 +84,7 @@ def main(argv=None):
             x_size = x_raw.get_shape().as_list()[1]
             width = 1
             in_channels = 1
-            out_channels = 10 # FLAGS.hidden / 20
+            out_channels = 20
             filter_weights, filter_biases = get_projection_weights([width, in_channels, out_channels], 'local_tf_filter')
             proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_tf_proj')
             tf_tensor = tf.reshape(x_raw, shape=[-1, x_size, 1])
@@ -98,6 +98,7 @@ def main(argv=None):
             return tflike
 
         def idf_like(info_arr):
+            nC, nF, info_by_feat = info_arr.get_shape().as_list()
             in_channels = info_by_feat
             out_channels = FLAGS.hidden
 
@@ -115,11 +116,13 @@ def main(argv=None):
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             #proj = tf.matmul(reshape, proj_weights)
             proj_t = tf.transpose(tf.reshape(proj, [nC, nF]))
+            return proj_t
 
-            pool_hiddensize = FLAGS.hidden / 2
+        def idf_pool(idf_like_for_cat):
+            pool_hiddensize = nC / 2
             pool_w, pool_b = get_projection_weights([nC, pool_hiddensize], 'pool_proj_h')
             pool_hw, pool_hb = get_projection_weights([pool_hiddensize, 1], 'pool_proj_o')
-            pooled_h = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(proj_t, pool_w) , pool_b)), keep_prob=keep_p)
+            pooled_h = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(idf_like_for_cat, pool_w) , pool_b)), keep_prob=keep_p)
             pooled = tf.squeeze(tf.nn.bias_add(tf.matmul(pooled_h, pool_hw), pool_hb))
             #idf = tf.Print(idf, [idf, proj, relu, conv, proj_weights, filter_weights, filter_biases], message="idf-like:idf, proj, relu, conv, proj_weights, filter_weights, filter_biases ")
             return pooled
@@ -142,13 +145,9 @@ def main(argv=None):
             return tf_tensor
 
         tf_tensor = tf_like_nooffset(x)
-        idf_tensor = idf_like(feat_info)
+        idf_tensor = idf_pool(idf_like(feat_info))
         print "tf_tensor", tf_tensor.get_shape()
         print "idf_tensor", idf_tensor.get_shape()
-
-
-        # ojo ^
-
 
         tf_ave = tf.reduce_mean(tf_tensor)
         idf_ave = tf.reduce_mean(idf_tensor)
@@ -160,16 +159,16 @@ def main(argv=None):
         #logits = tf.nn.bias_add(tf.matmul(ffout, logis_w), logis_b)
         logits = tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b)
         print "logits", logits.get_shape()
-        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(tf.squeeze(logits), tf.squeeze(y)))
+        loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits, y))
         #loss = tf.Print(loss, [loss], message="loss: ")
         print "loss", loss.get_shape()
         y_ = tf.nn.sigmoid(logits)
-        prediction = tf.squeeze(tf.round(y_))  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
+        prediction = tf.round(y_)  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
         #for plot
-        #tf.get_variable_scope().reuse_variables()
-        #tf_pred = tf_like_nooffset(freq_input)
-        #idf_pred = idf_like(tprfpr_input)
+        tf.get_variable_scope().reuse_variables()
+        tf_pred = tf_like_nooffset(freq_input)
+        idf_pred = idf_like(tprfpr_input)
 
         optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
         #gvs = optimizer.compute_gradients(loss, tf.trainable_variables())
@@ -190,11 +189,11 @@ def main(argv=None):
     create_if_not_exists(FLAGS.outdir)
     pc = data.devel_class_prevalence()
 
-    def tf_wrapper(x):
-        return tf_pred.eval(feed_dict={freq_input: [[x]], keep_p: 1.0})[0][0]
+    def tf_wrapper(freq):
+        return tf_pred.eval(feed_dict={freq_input: [[freq]], keep_p: 1.0})[0][0]
 
-    def idf_wrapper(x):
-        return idf_pred.eval(feed_dict={tprfpr_input: x, keep_p: 1.0})
+    def idf_wrapper(tpr, fpr):
+        return idf_pred.eval(feed_dict={tprfpr_input: [[[tpr,fpr]]], keep_p: 1.0})
 
     with tf.Session(graph=graph) as session:
         n_params = count_trainable_parameters()
@@ -212,7 +211,7 @@ def main(argv=None):
         best_f1 = 0.0
         log_steps = 0
         savedstep = -1
-        plot = PlotTfIdf(FLAGS.plotmode, FLAGS.plotdir, tf_wrapper, idf_wrapper, tf_points=[0,max_term_frequency], idf_points=feat_corr_info)
+        plot = PlotTfIdf(FLAGS.plotmode, FLAGS.plotdir, tf_wrapper, idf_wrapper, tf_points=[0,max_term_frequency], idf_points=None)#np.reshape(feat_corr_info, newshape=[-1,info_by_feat]))
         for step in range(1,FLAGS.maxsteps):
             tr_dict = as_feed_dict(data.train_batch(batch_size), dropout=True)
             #_, l, tf_po, tf_pr  = session.run([optimizer, loss, tf_pow, tf_prod], feed_dict=tr_dict)
@@ -251,7 +250,7 @@ def main(argv=None):
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
                 plot.plot(step=step)
-            if FLAGS.plotmode == 'show' and step > 50 and step % plotsteps == 0:
+            if FLAGS.plotmode == 'show' and step % plotsteps == 0:
                 plot.plot(step=step)
 
             #early stop if not improves after 10 validations

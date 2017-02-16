@@ -10,6 +10,7 @@ if 'MATPLOTLIB_USE' in os.environ:
     matplotlib.use(os.environ['MATPLOTLIB_USE'])
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from mpl_toolkits.mplot3d import Axes3D
 
 class PlotIdf:
 
@@ -116,7 +117,7 @@ class PlotTfIdf:
         x1_, x2_ = self.plot_coordinates(div=div, x1_range=x1_range, x2_range=x2_range)
         y_ = []
         for xi_ in zip(x1_, x2_):
-            y_.append(self.net_idf_wrapper(xi_))
+            y_.append(self.net_idf_wrapper(xi_[0],xi_[1]))
         y_ = np.reshape(y_, len(x1_))
         return x1_, x2_, y_
 
@@ -146,13 +147,16 @@ class PlotTfIdf:
         ax.set_title('idf-like function')
         ax.set_xlabel('tpr')
         ax.set_ylabel('fpr')
-        tpr_points, fpr_points = zip(*self.idf_points)
-        x1_range = [min(tpr_points), max(tpr_points)]
-        x2_range = [min(fpr_points), max(fpr_points)]
+        if self.idf_points is not None:
+            tpr_points, fpr_points = zip(*self.idf_points)
+            x1_range = [min(tpr_points), max(tpr_points)]
+            x2_range = [min(fpr_points), max(fpr_points)]
+        else: x1_range, x2_range = [0,1], [0,1]
         x1, x2, y_ = self._get_idf_points(x1_range=x1_range, x2_range=x2_range)
         ax.plot_trisurf(x1, x2, y_, linewidth=0.2, cmap=cm.jet, alpha=0.6)
         min_y, max_y = min(y_), max(y_)
-        ax.scatter(tpr_points, fpr_points, zs=min_y - 0.2 * (max_y - min_y), s=10, c='b', marker='o')
+        if self.idf_points is not None:
+            ax.scatter(tpr_points, fpr_points, zs=min_y - 0.2 * (max_y - min_y), s=10, c='b', marker='o')
         ax.set_xlim3d(x1_range)
         ax.set_ylim3d(x2_range)
         fig_pos += 1
