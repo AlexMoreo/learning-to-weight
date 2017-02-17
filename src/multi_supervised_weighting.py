@@ -30,15 +30,16 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='tf', rep_mode='dense', positive_cat=pos_cat_code,
+                         feat_sel=feat_sel, sublinear_tf=False)
     #print('L1-normalize')
     #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
     #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     #max_term_frequency = 1.0
     max_term_frequency = np.amax(data.devel_vec)
-    print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
-    print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
-    print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
+    print("|Tr|=%d" % data.num_devel_docs())
+    print("|Te|=%d" % data.num_test_documents())
+    print("|C|=%d" % data.num_categories())
     print("|V|=%d" % data.num_features())
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
@@ -103,8 +104,8 @@ def main(argv=None):
             out_channels = 1000
 
             #filter shape=(filter_height, filter_width, in_channels, out_channels)
-            filter_weights, filter_biases = get_projection_weights([nC, 1, in_channels, out_channels], 'local_idf_filter')
-            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
+            filter_weights, filter_biases = get_projection_weights([nC, 1, in_channels, out_channels], 'local_idf_filter_2')
+            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj_2')
 
             #idf_tensor shape=(batch, height, width, channels) in NHWC format (default)
             idf_tensor = tf.reshape(info_arr, shape=[1, nC, nF, info_by_feat])
@@ -193,7 +194,9 @@ def main(argv=None):
         #for plot
         tf.get_variable_scope().reuse_variables()
         tf_pred = tf_like_nooffset(freq_input)
-        idf_pred = idf_like(tprfpr_input)
+        #idf_pred = idf_pool(idf_like(tprfpr_input))
+        # idf_pred = idf_like_2(tprfpr_input)
+
 
         optimizer  = tf.train.AdamOptimizer(learning_rate=FLAGS.lrate).minimize(loss)
         #gvs = optimizer.compute_gradients(loss, tf.trainable_variables())
@@ -212,7 +215,6 @@ def main(argv=None):
     create_if_not_exists(FLAGS.checkpointdir)
     create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
-    pc = data.devel_class_prevalence()
 
     def tf_wrapper(freq):
         return tf_pred.eval(feed_dict={freq_input: [[freq]], keep_p: 1.0})[0][0]

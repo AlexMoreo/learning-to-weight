@@ -1,36 +1,53 @@
 import time
 
-from sklearn import metrics
 from sklearn.multiclass import OneVsRestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import fbeta_score, make_scorer
+from utils.metrics import macroF1, microF1
+
 from sklearn.svm import LinearSVC
 
 from data.dataset_loader import DatasetLoader
-from utils.metrics import macroF1, microF1
+
 import sys
-from sklearn.model_selection import GridSearchCV
 
 
-data = DatasetLoader(dataset='reuters21578', vectorize='tfgr', rep_mode='sparse', feat_sel=0.1)
+from data.weighted_vectors import WeightedVectors
+
+
+#data = DatasetLoader(dataset='reuters21578', vectorize='tfgr', rep_mode='sparse', feat_sel=0.1)
+data = WeightedVectors.unpickle('../vectors/', 'reu_Cmulticlass_FS0.10_H100_lr0.00100_Oadam_NTrue_nTrue_Poff_R0.pickle')
+
 Xtr, ytr = data.get_devel_set()
 tini = time.time()
 print Xtr.shape
 print ytr.shape
 
 # tf ig: 0.567962747193 0.845852017937
-# tf gr: 0.600562827435 0.850731142319
+# tf gr: 0.600562827435 0.850731142319 - .60909768332 .849739473314 (with GridSearchCV)
 # tf conf_weight 0.616643000763 0.858954041204
 
-#parameters = {'estimator__C':[1e4, 1e3, 1e2, 1e1, 1], 'estimator__loss':['hinge','squared_hinge'], 'estimator__dual':[False, True]}
-#svm_ = OneVsRestClassifier(LinearSVC(), n_jobs=-1)
-#model_tunning = GridSearchCV(svm_, param_grid=parameters,
-                             #scoring=metrics.f1_score,
-#                             error_score=0, refit=True, n_jobs=-1)
-#model_tunning.fit(Xtr, ytr)
+#0.617121197114
+#{'estimator__dual': True, 'estimator__C': 1, 'estimator__loss': 'hinge'}
+#MacroF1 test:  0.609662203524
+#MicroF1 test:  0.859154929577
+parameters = {'estimator__C':[1e4, 1e3, 1e2, 1e1, 1], 'estimator__loss':['hinge','squared_hinge'], 'estimator__dual':[False, True]}
+svm_ = OneVsRestClassifier(LinearSVC(), n_jobs=-1)
+model_tunning = GridSearchCV(svm_, param_grid=parameters,
+                             scoring=make_scorer(macroF1),
+                             error_score=0, refit=True, n_jobs=-1)
+tunned = model_tunning.fit(Xtr, ytr)
 
-#print model_tunning.best_score_
-#print model_tunning.best_params_
+print model_tunning.best_score_
+print model_tunning.best_params_
 
-#sys.exit()
+Xte, yte = data.get_test_set()
+yte_ = tunned.predict(Xte)
+
+print "MacroF1 test: ", macroF1(yte, yte_)
+print "MicroF1 test: ", microF1(yte, yte_)
+
+sys.exit()
 
 nC = ytr.shape[1]
 bestMacroF1 = 0

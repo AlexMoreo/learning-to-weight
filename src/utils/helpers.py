@@ -69,6 +69,8 @@ def err_exception(exit_condition=True, err_msg=""):
     if exit_condition:
         if not err_msg:
             raise ValueError(sys.argv[0]+ " Error")
+        else:
+            raise ValueError(err_msg)
 
 def err_param_range(param_name, param_value, valid_values):
     err_exception(exit_condition=param_value not in valid_values,
