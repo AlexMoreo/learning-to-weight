@@ -65,16 +65,14 @@ def add_layer(layer, hidden_size, non_linear_function=tf.nn.relu, keep_prob=None
 #--------------------------------------------------------------
 # Run helpers
 #--------------------------------------------------------------
-def err_exit(exit_condition=True, err_msg=""):
+def err_exception(exit_condition=True, err_msg=""):
     if exit_condition:
         if not err_msg:
-            err_msg = (sys.argv[0]+ " Error")
-        print(err_msg)
-        sys.exit()
+            raise ValueError(sys.argv[0]+ " Error")
 
 def err_param_range(param_name, param_value, valid_values):
-    err_exit(exit_condition=param_value not in valid_values,
-             err_msg='Param error: %s=%s should be one in %s' % (param_name, str(param_value), str(valid_values)))
+    err_exception(exit_condition=param_value not in valid_values,
+                  err_msg='Param error: %s=%s should be one in %s' % (param_name, str(param_value), str(valid_values)))
 
 
 def notexist_exit(path):
@@ -92,7 +90,7 @@ def restore_checkpoint(saver, session, checkpoint_dir, checkpoint_path=None):
     if not checkpoint_path:
         print('Restoring last checkpoint in %s' % checkpoint_dir)
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-        err_exit(not (ckpt and ckpt.model_checkpoint_path),
+        err_exception(not (ckpt and ckpt.model_checkpoint_path),
                  'Error: checkpoint directory %s not found or accessible.' % ckpt.model_checkpoint_path)
         saver.restore(session, ckpt.model_checkpoint_path)
     else:

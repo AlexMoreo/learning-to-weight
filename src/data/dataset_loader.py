@@ -29,20 +29,25 @@ class DatasetLoader:
 
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf']
-    unsupervised_tw_methods = ['tfidf', 'count', 'binary', 'sublinear_tfidf', 'sublinear_tf', 'bm25']
+    unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
+    valid_global_policies = ['max', 'ave', 'wave', 'sum']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
-    def __init__(self, dataset, valid_proportion=0.2, vectorize='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None):
+    def __init__(self, dataset, valid_proportion=0.2, vectorize='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
+                 sublinear_tf=False, global_policy="max"):
         init_time = time.time()
         err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
-        err_exit(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
+        err_param_range('global_policy', global_policy, valid_values=DatasetLoader.valid_global_policies)
+        err_exception(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorizer_name=vectorize
         self.positive_cat = positive_cat
+        self.sublinear_tf=sublinear_tf
+        self.global_policy=global_policy
 
         self.fetch_dataset(dataset)
         self.get_coocurrence_matrix()
@@ -163,30 +168,30 @@ class DatasetLoader:
     def __prevalence(self, inset):
         return sum(inset)*1.0 / len(inset)
 
-    def devel_class_prevalence(self, cat_label=0):
+    def devel_class_prevalence(self, cat_label):
         return self.__prevalence(self.devel.target[self.devel_indexes, cat_label])
 
-    def train_class_prevalence(self, cat_label=0):
+    def train_class_prevalence(self, cat_label):
         return self.__prevalence(self.devel.target[self.train_indexes, cat_label])
 
-    def valid_class_prevalence(self, cat_label=0):
+    def valid_class_prevalence(self, cat_label):
         return self.__prevalence(self.devel.target[self.valid_indexes, cat_label])
 
-    def test_class_prevalence(self, cat_label=0):
+    def test_class_prevalence(self, cat_label):
         return self.__prevalence(self.test.target[self.test_indexes, cat_label])
 
     def term_weighting(self):
         tini = time.time()
-        #if the vectorizer was set to count or binary, then there is nothing else to do here
-        if self.vectorizer_name in ['count', 'binary']:
+        #if the vectorizer was set to tf or binary, then there is nothing else to do here
+        if self.vectorizer_name == 'binary' or (self.vectorizer_name=='tf' and self.sublinear_tf==False):
             self.devel_vec = self.devel_coocurrence
             self.test_vec = self.test_coocurrence
         else:
-            if self.vectorizer_name in ['tfidf', 'sublinear_tfidf', 'sublinear_tf']:
-                sublinear = self.vectorizer_name.startswith('sublinear')
+            if self.vectorizer_name in ['tfidf', 'tf']:
                 idf = 'idf' in self.vectorizer_name
-                vectorizer = TfidfTransformer(norm=u'l2', use_idf=idf, smooth_idf=True, sublinear_tf=sublinear)
+                vectorizer = TfidfTransformer(norm=u'l2', use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
             elif self.vectorizer_name == 'bm25':
+                err_exception(self.sublinear_tf, "BM25 can not be combined with sublinear_tf")
                 vectorizer = BM25Transformer()
             elif self.vectorizer_name in ['tfig', 'tfgr', 'tfchi2', 'tfrf', 'tfcw']:
                 if self.vectorizer_name == 'tfig':
@@ -199,11 +204,14 @@ class DatasetLoader:
                     tsr_function = relevance_frequency
                 elif self.vectorizer_name == 'tfcw':
                     tsr_function = conf_weight
-                vectorizer = TSRweighting(tsr_function, global_policy='max',
+                vectorizer = TSRweighting(tsr_function, global_policy=self.global_policy,
                                           supervised_4cell_matrix=self.supervised_4cell_matrix,
-                                          sublinear_tf=True)
+                                          sublinear_tf=self.sublinear_tf)
+            self.vectorizer_name += ('_'+self.global_policy)
             self.devel_vec = vectorizer.fit_transform(self.devel_coocurrence, self.devel.target)
             self.test_vec = vectorizer.transform(self.test_coocurrence)
+
+        self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+self.vectorizer_name
 
         print("Vectorizer %s took %ds" % (self.vectorizer_name, time.time() - tini))
 

@@ -5,7 +5,7 @@ from src.feature_selection import tsr_function
 
 
 def main(argv=None):
-    err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
+    err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     outname = FLAGS.outname
     if not outname:
@@ -13,7 +13,7 @@ def main(argv=None):
         FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.idflike, FLAGS.run)
 
     # check if the vector has already been calculated
-    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+    err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
@@ -167,7 +167,7 @@ if __name__ == '__main__':
 
     err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
     err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
-    err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
+    err_exception(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 

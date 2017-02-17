@@ -8,14 +8,14 @@ from os.path import join
 from data.dataset_loader import DatasetLoader
 from data.weighted_vectors import WeightedVectors
 from utils.helpers import *
-from utils.helpers import err_exit
+from utils.helpers import err_exception
 from utils.result_table import ResultTable
 from utils.metrics import macroF1, microF1
 from feature_selection.tsr_function import ContTable
 
 
 def main(argv=None):
-    err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
+    err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     outname = FLAGS.outname
     if not outname:
@@ -25,7 +25,7 @@ def main(argv=None):
 
     # check if the vector has already been calculated
     if not FLAGS.f:
-        err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+        err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
 
     init_time = time.time()
     pos_cat_code = FLAGS.cat
@@ -97,6 +97,27 @@ def main(argv=None):
             #tf.get_variable_scope().reuse_variables()
             return tflike
 
+        def idf_like_2(info_arr):
+            nC, nF, info_by_feat = info_arr.get_shape().as_list()
+            in_channels = info_by_feat
+            out_channels = 1000
+
+            #filter shape=(filter_height, filter_width, in_channels, out_channels)
+            filter_weights, filter_biases = get_projection_weights([nC, 1, in_channels, out_channels], 'local_idf_filter')
+            proj_weights, proj_biases = get_projection_weights([out_channels, 1], 'local_idf_proj')
+
+            #idf_tensor shape=(batch, height, width, channels) in NHWC format (default)
+            idf_tensor = tf.reshape(info_arr, shape=[1, nC, nF, info_by_feat])
+            strides = [1, 1, 1, 1]
+
+            conv = tf.nn.conv2d(idf_tensor, filter=filter_weights, strides=strides, padding='VALID')
+            relu = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(conv, filter_biases)), keep_prob=keep_p)
+            reshape = tf.reshape(relu, [-1, out_channels])
+            proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
+            #proj = tf.matmul(reshape, proj_weights)
+            proj_t = tf.reshape(proj, [1, nF])
+            return proj_t
+
         def idf_like(info_arr):
             nC, nF, info_by_feat = info_arr.get_shape().as_list()
             in_channels = info_by_feat
@@ -115,10 +136,13 @@ def main(argv=None):
             reshape = tf.reshape(relu, [-1, out_channels])
             proj = tf.nn.bias_add(tf.matmul(reshape, proj_weights), proj_biases)
             #proj = tf.matmul(reshape, proj_weights)
-            proj_t = tf.transpose(tf.reshape(proj, [nC, nF]))
+            proj_t = tf.reshape(proj, [nC, nF])
             return proj_t
 
         def idf_pool(idf_like_for_cat):
+            if nC == 1:
+                return idf_like_for_cat
+            idf_like_for_cat = tf.transpose(idf_like_for_cat)
             pool_hiddensize = nC / 2
             pool_w, pool_b = get_projection_weights([nC, pool_hiddensize], 'pool_proj_h')
             pool_hw, pool_hb = get_projection_weights([pool_hiddensize, 1], 'pool_proj_o')
@@ -145,7 +169,8 @@ def main(argv=None):
             return tf_tensor
 
         tf_tensor = tf_like_nooffset(x)
-        idf_tensor = idf_pool(idf_like(feat_info))
+        #idf_tensor = idf_pool(idf_like(feat_info))
+        idf_tensor = idf_like_2(feat_info)
         print "tf_tensor", tf_tensor.get_shape()
         print "idf_tensor", idf_tensor.get_shape()
 
@@ -357,9 +382,9 @@ if __name__ == '__main__':
     err_param_range('computation', FLAGS.computation, ['local','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
-    err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
-    err_exit(FLAGS.computation == 'global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')
-    err_exit(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
+    err_exception(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
+    err_exception(FLAGS.computation == 'global' and FLAGS.plotmode != 'off', 'Error: plot mode should be off when computation is set to global.')
+    err_exception(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 

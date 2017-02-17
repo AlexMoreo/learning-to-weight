@@ -15,7 +15,7 @@ from src.feature_selection import tsr_function
 #TODO: parallelize supervised info vector
 #TODO: convolution on the supervised feat-cat statistics + freq (L1) + prob C (could be useful for non binary class)
 def main(argv=None):
-    err_exit(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
+    err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     outname = FLAGS.outname
     if not outname:
@@ -24,7 +24,7 @@ def main(argv=None):
                    FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
 
     # check if the vector has already been calculated
-    err_exit(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+    err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
 
     init_time = time.time()
     pos_cat_code = FLAGS.cat
@@ -338,9 +338,9 @@ if __name__ == '__main__':
     err_param_range('computation', FLAGS.computation, ['local','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
-    err_exit(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
-    err_exit(FLAGS.computation == 'global' and FLAGS.plotmode!='off', 'Error: plot mode should be off when computation is set to global.')
-    err_exit(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
+    err_exception(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
+    err_exception(FLAGS.computation == 'global' and FLAGS.plotmode != 'off', 'Error: plot mode should be off when computation is set to global.')
+    err_exception(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
