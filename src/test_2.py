@@ -1,22 +1,29 @@
 import time
-
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import fbeta_score, make_scorer
 from utils.metrics import macroF1, microF1
-
 from sklearn.svm import LinearSVC
-
 from data.dataset_loader import DatasetLoader
-
 import sys
-
-
 from data.weighted_vectors import WeightedVectors
+from result_table import *
 
 
-#data = DatasetLoader(dataset='reuters21578', vectorize='tfgr', rep_mode='sparse', feat_sel=0.1)
-data = WeightedVectors.unpickle('../vectors/', 'reu_Cmulticlass_FS0.10_H100_lr0.00100_Oadam_NTrue_nTrue_Poff_R0.pickle')
+data = DatasetLoader(dataset='reuters21578', vectorizer='tf', rep_mode='sparse')
+
+base = BaselineResultTable('../results/baselines.csv')
+base.init_row_result(classifier_name='clasificador base', data=data)
+base.commit()
+base = Learning2Weight_ResultTable('../results/learnt.csv')
+base.init_row_result(classifier_name='learned 1A', data=data)
+base.set_learn_params(1000, 12345, True,True,False)
+base.commit()
+sys.exit()
+
+
+
+#data = WeightedVectors.unpickle('../vectors/', 'reu_Cmulticlass_FS0.10_H100_lr0.00100_Oadam_NTrue_nTrue_Poff_R0.pickle')
 
 Xtr, ytr = data.get_devel_set()
 tini = time.time()

@@ -17,7 +17,7 @@ def main(argv=None):
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='sublinear_tf', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = DatasetLoader(dataset=FLAGS.dataset, vectorizer='sublinear_tf', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))

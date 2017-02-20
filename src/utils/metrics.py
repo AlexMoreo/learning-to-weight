@@ -9,6 +9,9 @@ We adhere to the common practice of outputting 1 in this case since the classifi
 classified all examples as negatives.
 """
 
+def accuracy(cell):
+    return cell.tp*1.0 / (cell.tp + cell.fp + cell.fn + cell.tn)
+
 def f1(cell):
     num = 2.0 * cell.tp
     den = 2.0 * cell.tp + cell.fp + cell.fn

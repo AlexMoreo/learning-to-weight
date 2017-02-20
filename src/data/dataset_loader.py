@@ -35,16 +35,16 @@ class DatasetLoader:
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
-    def __init__(self, dataset, valid_proportion=0.2, vectorize='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
+    def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
                  sublinear_tf=False, global_policy="max"):
         init_time = time.time()
-        err_param_range('vectorize', vectorize, valid_values=DatasetLoader.valid_vectorizers)
+        err_param_range('vectorizer', vectorizer, valid_values=DatasetLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
         err_param_range('global_policy', global_policy, valid_values=DatasetLoader.valid_global_policies)
         err_exception(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
-        self.vectorizer_name=vectorize
+        self.vectorizer_name=vectorizer
         self.positive_cat = positive_cat
         self.sublinear_tf=sublinear_tf
         self.global_policy=global_policy
@@ -207,7 +207,7 @@ class DatasetLoader:
                 vectorizer = TSRweighting(tsr_function, global_policy=self.global_policy,
                                           supervised_4cell_matrix=self.supervised_4cell_matrix,
                                           sublinear_tf=self.sublinear_tf)
-            self.vectorizer_name += ('_'+self.global_policy)
+                self.vectorizer_name += ('_'+self.global_policy)
             self.devel_vec = vectorizer.fit_transform(self.devel_coocurrence, self.devel.target)
             self.test_vec = vectorizer.transform(self.test_coocurrence)
 

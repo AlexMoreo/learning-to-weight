@@ -29,7 +29,7 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = DatasetLoader(dataset=FLAGS.dataset, vectorizer='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
     print('L1-normalize')
     data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
     data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
@@ -278,7 +278,7 @@ def main(argv=None):
 
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
-            results = ResultTable(FLAGS.resultcontainer)
+            results = BasicResultTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=acc, f1=f1, prec=p, rec=r,
                                              cont_table=contingency_table(predictions, eval_dict[y]), init_time=init_time)

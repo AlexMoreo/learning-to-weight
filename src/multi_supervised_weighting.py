@@ -9,7 +9,7 @@ from data.dataset_loader import DatasetLoader
 from data.weighted_vectors import WeightedVectors
 from utils.helpers import *
 from utils.helpers import err_exception
-from utils.result_table import ResultTable
+from utils.result_table import BasicResultTable
 from utils.metrics import macroF1, microF1
 from feature_selection.tsr_function import ContTable
 
@@ -30,7 +30,7 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorize='tf', rep_mode='dense', positive_cat=pos_cat_code,
+    data = DatasetLoader(dataset=FLAGS.dataset, vectorizer='tf', rep_mode='dense', positive_cat=pos_cat_code,
                          feat_sel=feat_sel, sublinear_tf=False)
     #print('L1-normalize')
     #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
@@ -268,11 +268,11 @@ def main(argv=None):
                     savedstep=step
                     savemodel(session, savedstep, saver, FLAGS.checkpointdir, 'model')
 
-                eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
-                predictions = prediction.eval(feed_dict=eval_dict)
-                macro_f1 = macroF1(predictions, eval_dict[y])
-                micro_f1 = microF1(predictions, eval_dict[y])
-                print('[Test macro_f1=%.3f, micro_f1=%.3f]' % (macro_f1, micro_f1))
+                #eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
+                #predictions = prediction.eval(feed_dict=eval_dict)
+                #macro_f1 = macroF1(predictions, eval_dict[y])
+                #micro_f1 = microF1(predictions, eval_dict[y])
+                #print('[Test macro_f1=%.3f, micro_f1=%.3f]' % (macro_f1, micro_f1))
                 timeref = time.time()
 
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
@@ -313,7 +313,7 @@ def main(argv=None):
 
         # if indicated, saves the result of the current logistic regressor
         if FLAGS.resultcontainer:
-            results = ResultTable(FLAGS.resultcontainer)
+            results = BasicResultTable(FLAGS.resultcontainer)
             results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
             results.add_result_metric_scores(acc=-1, f1=macro_f1, prec=-1, rec=-1,
                                              cont_table=ContTable(-1,-1,-1,-1), init_time=init_time)
