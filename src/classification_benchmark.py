@@ -12,13 +12,9 @@ from sklearn.metrics import make_scorer
 from utils.metrics import *
 
 
-from src.data.dataset_loader import *
-from src.data.weighted_vectors import WeightedVectors
-from src.utils.result_table import BaselineResultTable, Learning2Weight_ResultTable
-
-#TODO: improve with GridSearchCV or RandomizedSearchCV
-
-n_jobs = -1
+from data.dataset_loader import *
+from data.weighted_vectors import WeightedVectors
+from utils.result_table import BaselineResultTable, Learning2Weight_ResultTable
 
 def featsel(trX, trY, teX, n_feat):
     print('Selecting top-%d features from %d...'%(n_feat, trX.shape[1]))
@@ -287,9 +283,6 @@ if __name__ == '__main__':
             print('-'*80)
 
     print("Done.")
-    results.commit()
-
-
 #some results reuters21578
 #tfgr, sublinear max: MacroF1=0.609 microF1=0.850
 #tfgr, sublinear ave: MacroF1=0.568 microF1=0.850
