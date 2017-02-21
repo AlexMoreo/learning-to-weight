@@ -8,7 +8,7 @@ from os.path import join
 from data.dataset_loader import DatasetLoader
 from data.weighted_vectors import WeightedVectors
 from utils.helpers import *
-from utils.helpers import err_exception
+from utils.tf_helpers import *
 from utils.result_table import BasicResultTable
 from utils.metrics import macroF1, microF1
 from feature_selection.tsr_function import ContTable
