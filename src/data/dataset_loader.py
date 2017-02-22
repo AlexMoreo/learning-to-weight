@@ -93,6 +93,8 @@ class TextCollectionLoader:
             self.devel = self.fetch_20newsgroups(subset='train', data_path=self.data_path)
             self.test  = self.fetch_20newsgroups(subset='test', data_path=self.data_path)
             self.classification = 'single-label'
+            self.devel.target = np.expand_dims(self.devel.target, axis=1)
+            self.test.target = np.expand_dims(self.test.target, axis=1)
         elif dataset == 'reuters21578':
             self.devel = self.fetch_reuters21579(subset='train', data_path=self.data_path)
             self.test  = self.fetch_reuters21579(subset='test', data_path=self.data_path)
@@ -215,8 +217,9 @@ class TextCollectionLoader:
         print("Term weighting: %s, took %ds" % (self.vectorizer_name, time.time() - tini))
 
     def get_coocurrence_matrix(self):
+        min_df = 1 if self.name == 'reuters21578' else 3
         binary=self.vectorizer_name=='binary'
-        count_vec = CountVectorizer(stop_words='english', binary=binary, min_df=1)
+        count_vec = CountVectorizer(stop_words='english', binary=binary, min_df=min_df)
         self.devel_coocurrence = count_vec.fit_transform(self.devel.data)
         self.test_coocurrence  = count_vec.transform(self.test.data)
 
