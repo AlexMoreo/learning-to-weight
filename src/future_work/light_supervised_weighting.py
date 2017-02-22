@@ -17,7 +17,7 @@ def main(argv=None):
 
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorizer='sublinear_tf', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
+    data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='sublinear_tf', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))
@@ -151,7 +151,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default 20newsgroups)')
+    flags.DEFINE_string('dataset', '20newsgroups', 'Dataset in ' + str(TextCollectionLoader.valid_datasets) + ' (default 20newsgroups)')
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
@@ -165,8 +165,8 @@ if __name__ == '__main__':
     flags.DEFINE_integer('run', 0, 'Specifies the number of run in case an experiment is to be replied more than once (default 0)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
-    err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
-    err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset])
+    err_param_range('dataset', FLAGS.dataset, TextCollectionLoader.valid_datasets)
+    err_param_range('cat', FLAGS.cat, valid_values=TextCollectionLoader.valid_catcodes[FLAGS.dataset])
     err_exception(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered

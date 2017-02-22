@@ -54,6 +54,8 @@ class BaselineResultTable(BasicResultTable):
         if classification_mode not in ['binary', 'multiclass']:
             raise ValueError("Classification mode should be either binary or multiclass")
         columns = self.columns + self._evaluation_metrics(classification_mode)
+        if result_container[-4:]=='.csv': result_container=result_container.replace('.csv', '.'+classification_mode+'.csv')
+        else: result_container += classification_mode+'.csv'
         super(BaselineResultTable, self).__init__(result_container, columns)
 
     def _evaluation_metrics(self, classification_mode):
@@ -80,6 +82,12 @@ class BaselineResultTable(BasicResultTable):
         self.append('notes', notes)
         self.set_all({'macro_f1': macro_f1, 'micro_f1': micro_f1})
         self.set_all({'date': strftime("%d-%m-%Y", gmtime()), 'time': init_time, 'elapsedtime': time.time() - init_time})
+
+    def check_if_calculated(self, classifier, weighting, num_features, dataset, category):
+        query_ = "classifier=='%s' and weighting=='%s' and num_features==%d and dataset=='%s' and category==%d" % (
+            classifier, weighting, num_features, dataset, category
+        )
+        return len(self.df.query(query_)) > 0
 
 class Learning2Weight_ResultTable(BaselineResultTable):
     learn_columns = ['run',

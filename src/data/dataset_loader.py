@@ -25,7 +25,7 @@ class Dataset:
         self.target = target
         self.target_names = target_names
 
-class DatasetLoader:
+class TextCollectionLoader:
 
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf']
@@ -37,12 +37,11 @@ class DatasetLoader:
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
                  sublinear_tf=False, global_policy="max"):
-        init_time = time.time()
-        err_param_range('vectorizer', vectorizer, valid_values=DatasetLoader.valid_vectorizers)
-        err_param_range('rep_mode', rep_mode, valid_values=DatasetLoader.valid_repmodes)
-        err_param_range('dataset', dataset, valid_values=DatasetLoader.valid_datasets)
-        err_param_range('global_policy', global_policy, valid_values=DatasetLoader.valid_global_policies)
-        err_exception(positive_cat is not None and positive_cat not in DatasetLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
+        err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
+        err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
+        err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
+        err_param_range('global_policy', global_policy, valid_values=TextCollectionLoader.valid_global_policies)
+        err_exception(positive_cat is not None and positive_cat not in TextCollectionLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorizer_name=vectorizer
         self.positive_cat = positive_cat
@@ -59,7 +58,6 @@ class DatasetLoader:
 
         self.epoch = 0
         self.offset = 0
-        print("Data load took %f seconds." % (time.time()-init_time))
 
     # Ensures the train and validation splits to approximately preserve the original devel prevalence.
     # In extremely imbalanced cases, the train set is guaranteed to have some positive examples
@@ -124,7 +122,9 @@ class DatasetLoader:
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
         if self.positive_cat is None: return
-        print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
+        cat_name=self.devel.target_names[self.positive_cat]
+        nC = len(self.valid_catcodes[self.name])
+        print("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat,nC))
         self.devel.target = self.devel.target[:, self.positive_cat:self.positive_cat+1]
         self.test.target = self.test.target[:, self.positive_cat:self.positive_cat+1]
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
@@ -141,8 +141,7 @@ class DatasetLoader:
         if feat_sel >= nF:
             print "Warning: number of features to select is greater than the actual number of features (ommitted)."
             return
-        print('Selecting %d most important features from %d original features with %s in a round robin manner'
-              % (feat_sel, nF, score_func.__name__))
+        print('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
         #fs = SelectKBest(chi2, k=feat_sel)
         #check if the ranking of features for this setting has already been calculated
         features_rank_pickle_path = join(self.data_path, 'RR_' + score_func.__name__ + '_nF' + str(nF) + '_pos' + str(self.positive_cat) + '_rank.pickle')
@@ -213,7 +212,7 @@ class DatasetLoader:
 
         self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+self.vectorizer_name
 
-        print("Vectorizer %s took %ds" % (self.vectorizer_name, time.time() - tini))
+        print("Term weighting: %s, took %ds" % (self.vectorizer_name, time.time() - tini))
 
     def get_coocurrence_matrix(self):
         binary=self.vectorizer_name=='binary'

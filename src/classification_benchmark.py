@@ -109,7 +109,6 @@ def knn(data, results):
     results.commit()
 
 def fit_model_hyperparameters(data, parameters, model):
-    print "Init optimization of metaparemeters for model ", type(model).__name__
     single_class = data.num_categories() == 1
     if not single_class:
         parameters = {'estimator__' + key: parameters[key] for key in parameters.keys()}
@@ -125,10 +124,20 @@ def fit_model_hyperparameters(data, parameters, model):
 
 
 def fit_and_test_model(data, parameters, model, results):
+    single_class = data.num_categories() == 1
+    if results.check_if_calculated(classifier=type(model).__name__,
+                                weighting=data.vectorizer_name,
+                                num_features=data.num_features(),
+                                dataset=data.name,
+                                category=data.positive_cat if single_class else 'all'):
+        print "Skip already calculated experiment."
+        return
+
     init_time = time.time()
     tunned_model = fit_model_hyperparameters(data, parameters, model)
     tunning_time = time.time() - init_time
-    print "Best parameters ", tunned_model.best_params_, " took ", str(tunning_time), " seconds"
+    print("%s: best parameters %s, best score %.3f, took %.3f seconds" %
+          (type(model).__name__, tunned_model.best_params_, tunned_model.best_score_, tunning_time))
 
     Xte, yte = data.get_test_set()
     Xte.sort_indices()
@@ -138,16 +147,17 @@ def fit_and_test_model(data, parameters, model, results):
     if isinstance(data, WeightedVectors):
         results.set_all(data.get_learning_parameters())
 
-    single_class = data.num_categories() == 1
     if single_class:
         result_4cell_table = single_metric_statistics(np.squeeze(yte), yte_)
         fscore = f1(result_4cell_table)
         acc = accuracy(result_4cell_table)
         results.add_result_scores_binary(acc, fscore, result_4cell_table, init_time, notes=tunned_model.best_params_)
+        print("Test scores: %.3f acc, %.3f f1" % (acc, fscore))
     else:
         macro_f1 = macroF1(yte, yte_)
         micro_f1 = microF1(yte, yte_)
         results.add_result_scores_multiclass(macro_f1, micro_f1, init_time, notes=tunned_model.best_params_)
+        print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
     results.commit()
 
 
@@ -207,7 +217,6 @@ def logistic_regression(data, results):
 
 
 def run_benchmark(data, results, benchmarks):
-    print('%s: %s' % (data.vectorizer_name, ('Category ' + str(data.positive_cat)) if args.classification=='binary' else 'Multiclass'))
     print("|Tr|=%d" % data.num_devel_docs())
     print("|Te|=%d" % data.num_test_documents())
     print("|C|=%d" % data.num_categories())
@@ -226,10 +235,10 @@ if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=DatasetLoader.valid_datasets)
+    parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=TextCollectionLoader.valid_datasets)
     parser.add_argument("-v", "--vectordir", help="directory containing learnt vectors in .pickle format", type=str)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
-    parser.add_argument("-m", "--method", help="selects one single vectorizer method to run from "+str(DatasetLoader.valid_vectorizers),
+    parser.add_argument("-m", "--method", help="selects one single vectorizer method to run from "+str(TextCollectionLoader.valid_vectorizers),
                         type=str, default="all")
     parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
     parser.add_argument("--sublinear_tf", help="logarithmic version of the tf-like function", default=False, action="store_true")
@@ -252,21 +261,19 @@ if __name__ == '__main__':
                        })
 
     if args.dataset:
-        print("Runing classification benchmark on baselines")
-        print("Dataset: " + args.dataset)
-        print("Classification: " + args.classification)
-        print("Loading result file from " + args.resultfile)
+        print("Runing classification benchmark on baselines\n"+"-"*80)
         results = BaselineResultTable(args.resultfile, args.classification)
-        for vectorizer in ([args.method] if args.method != 'all' else DatasetLoader.valid_vectorizers):
+        for vectorizer in ([args.method] if args.method != 'all' else TextCollectionLoader.valid_vectorizers):
             if args.classification == 'binary':
-                for cat in DatasetLoader.valid_catcodes[args.dataset]:
-                    data = DatasetLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse', feat_sel=args.fs,
-                                         sublinear_tf=args.sublinear_tf, global_policy=args.global_policy,
-                                         positive_cat=cat)
+                for cat in TextCollectionLoader.valid_catcodes[args.dataset]:
+                    data = TextCollectionLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse', feat_sel=args.fs,
+                                                sublinear_tf=args.sublinear_tf, global_policy=args.global_policy,
+                                                positive_cat=cat)
                     run_benchmark(data, results, benchmarks)
+                    print('-'*80)
             elif args.classification == 'multiclass':
-                data = DatasetLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse',
-                                     feat_sel=args.fs, sublinear_tf=args.sublinear_tf, global_policy=args.global_policy)
+                data = TextCollectionLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse',
+                                            feat_sel=args.fs, sublinear_tf=args.sublinear_tf, global_policy=args.global_policy)
                 run_benchmark(data, results, benchmarks)
             else:
                 raise ValueError('classification param should be either "multiclass" or "binary"')

@@ -34,23 +34,16 @@ class RoundRobin:
         self.n_jobs=n_jobs
 
     def fit(self, X, y):
-        print("Round Robin")
         nF = X.shape[1]
         nC = y.shape[1]
-        print("Getting supervised 4 cell matrix (%d x %d)" % (nC, nF))
         self.supervised_4cell_matrix = get_supervised_matrix(X, y, n_jobs=self.n_jobs)
-        print "Getting tsr matrix"
         tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self._score_func)
 
         #enhance the tsr_matrix with the feature index
-        print "Enhancing tsr matrix"
         tsr_matrix = [[(tsr_matrix[c,f], f) for f in range(nF)] for c in range(nC)]
-
-        print "Sorting tsr matrix"
         for c in range(nC):
             tsr_matrix[c].sort(key=lambda x: x[0]) #sort by tsr
 
-        print "Selecting bests"
         sel_feats = set()
         self._features_rank = []
         round = 0

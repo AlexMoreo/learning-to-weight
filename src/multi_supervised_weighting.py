@@ -5,7 +5,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from os.path import join
 
-from data.dataset_loader import DatasetLoader
+from data.dataset_loader import TextCollectionLoader
 from data.weighted_vectors import WeightedVectors
 from utils.helpers import *
 from utils.tf_helpers import *
@@ -30,8 +30,8 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = DatasetLoader(dataset=FLAGS.dataset, vectorizer='tf', rep_mode='dense', positive_cat=pos_cat_code,
-                         feat_sel=feat_sel, sublinear_tf=False)
+    data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='tf', rep_mode='dense', positive_cat=pos_cat_code,
+                                feat_sel=feat_sel, sublinear_tf=False)
     #print('L1-normalize')
     #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
     #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
@@ -350,7 +350,7 @@ if __name__ == '__main__':
     flags = tf.app.flags
     FLAGS = flags.FLAGS
 
-    flags.DEFINE_string('dataset', '', 'Dataset in '+str(DatasetLoader.valid_datasets)+' (default none)')
+    flags.DEFINE_string('dataset', '', 'Dataset in ' + str(TextCollectionLoader.valid_datasets) + ' (default none)')
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', None, 'Code of the positive category (default None, i.e., multiclass setting).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
@@ -378,8 +378,8 @@ if __name__ == '__main__':
     flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
-    err_param_range('dataset', FLAGS.dataset, DatasetLoader.valid_datasets)
-    err_param_range('cat', FLAGS.cat, valid_values=DatasetLoader.valid_catcodes[FLAGS.dataset]+[None])
+    err_param_range('dataset', FLAGS.dataset, TextCollectionLoader.valid_datasets)
+    err_param_range('cat', FLAGS.cat, valid_values=TextCollectionLoader.valid_catcodes[FLAGS.dataset] + [None])
     err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
     err_param_range('computation', FLAGS.computation, ['local','global'])
     err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])

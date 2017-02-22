@@ -10,7 +10,7 @@ classified all examples as negatives.
 """
 
 def accuracy(cell):
-    return cell.tp*1.0 / (cell.tp + cell.fp + cell.fn + cell.tn)
+    return (cell.tp + cell.tn)*1.0 / (cell.tp + cell.fp + cell.fn + cell.tn)
 
 def f1(cell):
     num = 2.0 * cell.tp
