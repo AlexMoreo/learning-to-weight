@@ -120,7 +120,10 @@ def fit_model_hyperparameters(data, parameters, model):
     Xtr.sort_indices()
     if single_class:
         ytr = np.squeeze(ytr)
-    return model_tunning.fit(Xtr, ytr)
+
+    tunned = model_tunning.fit(Xtr, ytr)
+
+    return tunned
 
 
 def fit_and_test_model(data, parameters, model, results):
@@ -164,7 +167,7 @@ def fit_and_test_model(data, parameters, model, results):
 def linear_svm(data, results):
     parameters = {'C': [1e4, 1e3, 1e2, 1e1, 1],
                   'loss': ['hinge', 'squared_hinge'],
-                  'dual': [False, True]}
+                  'dual': [True, False]}
     model = LinearSVC()
     fit_and_test_model(data, parameters, model, results)
 
