@@ -70,7 +70,7 @@ class BaselineResultTable(BasicResultTable):
         self.set('weighting', data.vectorizer_name)
         self.set('num_features', data.num_features())
         self.set('dataset', data.name)
-        self.set('category', data.positive_cat if data.positive_cat != None else "all")
+        self.set('category', data.positive_cat if data.positive_cat != None else -1)
 
     def add_result_scores_binary(self, acc, f1, cont_table, init_time, notes=''):
         self.append('notes', notes)

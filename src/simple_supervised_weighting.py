@@ -145,25 +145,14 @@ def main(argv=None):
                           'date': strftime("%d-%m-%Y", gmtime()),
                           'hiddensize': -1,
                           'lrate': FLAGS.lrate,
-                          'optimizer': FLAGS.optimizer,
-                          'normalize': FLAGS.normalize,
-                          'nonnegative': -1,
-                          'pretrain': -1,
+                          'learn_tf': False,
+                          'learn_idf': False,
+                          'learn_norm': False,
                           'iterations': savedstep,
                           'notes': FLAGS.notes,
                           'run': FLAGS.run}
 
         print 'Weighting documents'
-        def weight_vectors(raw_vectors, blocksize=1000):
-            n_vec = raw_vectors.shape[0]
-            weighted = []
-            offset = 0
-            while offset < n_vec:
-                weighted.append(normalized.eval(feed_dict={x: raw_vectors[offset:offset+blocksize]}))
-                offset+=blocksize
-            res = np.concatenate(weighted,axis=0)
-            return res
-
         train_x, train_y = data.get_train_set()
         train_x_weighted = normalized.eval(feed_dict={x: train_x})
         val_x, val_y   = data.get_validation_set()
