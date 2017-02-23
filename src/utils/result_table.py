@@ -98,7 +98,7 @@ class Learning2Weight_ResultTable(BaselineResultTable):
                     'iterations']
     def __init__(self, result_container, classification_mode):
         columns = self.columns + self._evaluation_metrics(classification_mode) + self.learn_columns
-        super(BaselineResultTable, self).__init__(result_container, classification_mode, columns)
+        super(BaselineResultTable, self).__init__(result_container, columns)
 
     def set_learn_params(self, hiddensize, iterations, learn_tf=False, learn_idf=False, learn_norm=False, run=0):
         self.set('hiddensize', hiddensize)

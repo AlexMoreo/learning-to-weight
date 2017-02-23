@@ -11,7 +11,7 @@ class WeightedVectors:
     def __init__(self, vectorizer, from_dataset, from_category, trX, trY, vaX, vaY, teX, teY, run_params_dic=None):
         self.name = from_dataset
         self.positive_cat = from_category
-        self.vectorize = vectorizer
+        self.vectorizer_name = vectorizer
         self.trX = csr_matrix(trX)
         self.trY = trY
         self.vaX = csr_matrix(vaX)
@@ -44,7 +44,10 @@ class WeightedVectors:
         return self.trX.shape[1]
 
     def num_categories(self):
-        return 2
+        return self.teY.shape[1]
+
+    def num_devel_documents(self):
+        return self.num_tr_documents()+self.num_val_documents()
 
     def num_tr_documents(self):
         return len(self.trY)

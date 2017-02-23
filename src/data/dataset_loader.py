@@ -260,7 +260,7 @@ class TextCollectionLoader:
             self.epoch += 1
         return batch, labels
 
-    def num_devel_docs(self):
+    def num_devel_documents(self):
         return len(self.devel_indexes)
 
     def num_categories(self):

@@ -11,6 +11,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import make_scorer
 from utils.metrics import *
 
+# -d reuters21578 -r ../results/baselines_svm.csv -m binary --fs 0.1 --classification binary
 
 from data.dataset_loader import *
 from data.weighted_vectors import WeightedVectors
@@ -132,7 +133,7 @@ def fit_and_test_model(data, parameters, model, results):
                                 weighting=data.vectorizer_name,
                                 num_features=data.num_features(),
                                 dataset=data.name,
-                                category=data.positive_cat if single_class else 'all'):
+                                category=data.positive_cat if single_class else -1):
         print "Skip already calculated experiment."
         return
 
@@ -220,7 +221,7 @@ def logistic_regression(data, results):
 
 
 def run_benchmark(data, results, benchmarks):
-    print("|Tr|=%d" % data.num_devel_docs())
+    print("|Tr|=%d" % data.num_devel_documents())
     print("|Te|=%d" % data.num_test_documents())
     print("|C|=%d" % data.num_categories())
     if benchmarks['linearsvm']:
@@ -254,7 +255,7 @@ if __name__ == '__main__':
     #parser.add_argument("--no-knn", help="removes the knn classifier from the benchmark", default=False, action="store_true")
     args = parser.parse_args()
 
-    err_exception(args.dataset and args.vectordir, "Specify only one run mode: runing baselines on a dataset or precalculated vectors.")
+    #err_exception(args.dataset and args.vectordir, "Specify only one run mode: runing baselines on a dataset or precalculated vectors.")
 
     benchmarks = dict({'linearsvm': not args.no_linearsvm,
                        #'multinomialnb': not args.no_multinomialnb,
@@ -284,7 +285,7 @@ if __name__ == '__main__':
     elif args.vectordir:
         print("Runing classification benchmark on learnt vectors in " + args.vectordir)
         vectors = [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]
-        results = Learning2Weight_ResultTable(args.resultfile)
+        results = Learning2Weight_ResultTable(args.resultfile, args.classification)
         for i,vecname in enumerate(vectors):
             print("Vector file: " + vecname)
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
