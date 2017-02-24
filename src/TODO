@@ -1,6 +1,5 @@
 - Make class for supervised information matrix, that could be passed as a parameter in round robin or in stw
 - Baselines
-- Decide on the dataset preprocessing (min_df, etc)
 - Decide experiments (binary/multiclass, vary feature selection or fixed)
 - Debate about the net architecture
 - Fisher Score

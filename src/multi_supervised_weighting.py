@@ -103,7 +103,7 @@ def main(argv=None):
         def idf_like_2(info_arr):
             nC, nF, info_by_feat = info_arr.get_shape().as_list()
             in_channels = info_by_feat
-            out_channels = 1000
+            out_channels = FLAGS.hidden
 
             #filter shape=(filter_height, filter_width, in_channels, out_channels)
             filter_weights, filter_biases = get_projection_weights([nC, 1, in_channels, out_channels], 'local_idf_filter_2')
@@ -317,13 +317,13 @@ def main(argv=None):
                           'run': FLAGS.run}
 
         # if indicated, saves the result of the current logistic regressor
-        if FLAGS.resultcontainer:
-            results = BasicResultTable(FLAGS.resultcontainer)
-            results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
-            results.add_result_metric_scores(acc=-1, f1=macro_f1, prec=-1, rec=-1,
-                                             cont_table=ContTable(-1,-1,-1,-1), init_time=init_time)
-            results.set_all(run_params_dic)
-            results.commit()
+        #if FLAGS.resultcontainer:
+        #    results = BasicResultTable(FLAGS.resultcontainer)
+        #    results.init_row_result('LogisticRegression-Internal', data, run=FLAGS.run)
+        #    results.add_result_metric_scores(acc=-1, f1=macro_f1, prec=-1, rec=-1,
+        #                                     cont_table=ContTable(-1,-1,-1,-1), init_time=init_time)
+        #    results.set_all(run_params_dic)
+        #    results.commit()
 
         print 'Weighting documents'
         def weight_vectors(raw_vectors, blocksize=1000):
