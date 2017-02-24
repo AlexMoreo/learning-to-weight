@@ -17,9 +17,13 @@ from sklearn.preprocessing import normalize
 def main(argv=None):
     err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
+    l1 = False
+    sublinear = True
+    vectorizer_mode = ("sublinear_" if sublinear else "")+"tf"+("_l1" if l1 else "")
+
     outname = FLAGS.outname
     if not outname:
-        outname = 'simple_%s_C%s_FS%.2f_lr%.5f_O%s_N%s_R%d.pickle' % \
+        outname = 'simple_'+vectorizer_mode+'_%s_C%s_FS%.2f_lr%.5f_O%s_N%s_R%d.pickle' % \
                   (FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.lrate, FLAGS.optimizer,
                    FLAGS.normalize, FLAGS.run)
 
@@ -32,10 +36,11 @@ def main(argv=None):
     feat_sel = FLAGS.fs
     data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='tf', rep_mode='dense', positive_cat=pos_cat_code,
                                 feat_sel=feat_sel,
-                                sublinear_tf=False)
-    print('L1-normalize')
-    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+                                sublinear_tf=sublinear)
+    if l1:
+        print('L1-normalize')
+        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     #max_term_frequency = 1.0
     #max_term_frequency = np.amax(data.devel_vec)
     print("|Tr|=%d" % data.num_devel_documents())
@@ -159,7 +164,7 @@ def main(argv=None):
         val_x_weighted = normalized.eval(feed_dict={x: val_x})
         test_x, test_y   = data.get_test_set()
         test_x_weighted  =  normalized.eval(feed_dict={x: test_x})
-        wv = WeightedVectors(vectorizer='simple_LtoW', from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer='simple_LtoW'+vectorizer_mode, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
