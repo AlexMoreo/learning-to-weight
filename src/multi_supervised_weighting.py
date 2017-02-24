@@ -37,7 +37,7 @@ def main(argv=None):
     #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     #max_term_frequency = 1.0
     max_term_frequency = np.amax(data.devel_vec)
-    print("|Tr|=%d" % data.num_devel_docs())
+    print("|Tr|=%d" % data.num_devel_documents())
     print("|Te|=%d" % data.num_test_documents())
     print("|C|=%d" % data.num_categories())
     print("|V|=%d" % data.num_features())
@@ -98,6 +98,8 @@ def main(argv=None):
             #tf.get_variable_scope().reuse_variables()
             return tflike
 
+        """This variant learns a function taking as inputs all pairs (tpr,fpr) from all categories, i.e.,
+        assumes that the idf-like function is not unique for all categories"""
         def idf_like_2(info_arr):
             nC, nF, info_by_feat = info_arr.get_shape().as_list()
             in_channels = info_by_feat
@@ -119,6 +121,8 @@ def main(argv=None):
             proj_t = tf.reshape(proj, [1, nF])
             return proj_t
 
+        """This variant assumes there is a idf-like function for all categories, and thus returns all idf-like values
+        making no assumption on the later pooling"""
         def idf_like(info_arr):
             nC, nF, info_by_feat = info_arr.get_shape().as_list()
             in_channels = info_by_feat
@@ -223,6 +227,7 @@ def main(argv=None):
         return idf_pred.eval(feed_dict={tprfpr_input: [[[tpr,fpr]]], keep_p: 1.0})
 
     with tf.Session(graph=graph) as session:
+
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
