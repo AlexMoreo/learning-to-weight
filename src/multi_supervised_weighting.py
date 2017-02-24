@@ -298,11 +298,11 @@ def main(argv=None):
         if savedstep>0:
             restore_checkpoint(saver, session, FLAGS.checkpointdir)
         if FLAGS.plotmode in ['img', 'show']: plot.plot(step=savedstep)
-        eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
-        predictions = prediction.eval(feed_dict=eval_dict)
-        macro_f1 = macroF1(predictions, eval_dict[y])
-        micro_f1 = microF1(predictions, eval_dict[y])
-        print('Logistic Regression macro_f1=%.3f, micro_f1=%.3f' % (macro_f1, micro_f1))
+        #eval_dict = as_feed_dict(data.get_test_set(), dropout=False)
+        #predictions = prediction.eval(feed_dict=eval_dict)
+        #macro_f1 = macroF1(predictions, eval_dict[y])
+        #micro_f1 = microF1(predictions, eval_dict[y])
+        #print('Logistic Regression macro_f1=%.3f, micro_f1=%.3f' % (macro_f1, micro_f1))
 
         run_params_dic = {'num_features': data.num_features(),
                           'date': strftime("%d-%m-%Y", gmtime()),
