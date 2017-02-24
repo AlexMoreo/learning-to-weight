@@ -1,0 +1,10 @@
+- Make class for supervised information matrix, that could be passed as a parameter in round robin or in stw
+- Baselines
+- Decide on the dataset preprocessing (min_df, etc)
+- Decide experiments (binary/multiclass, vary feature selection or fixed)
+- Debate about the net architecture
+- Fisher Score
+- Check articles about genetic algorithm-based exploration of term weighting formulae:
+    http://www.sciencedirect.com/science/article/pii/S0377221705004674
+    ftp://fileserver.itb.cnr.it/acalabria/2008/PhD/Materiale/MachineLearning/Jarmulak%201999%20-%20Genetic%20Algorithms%20for%20Feature%20Selection%20and%20Weighting.pdf
+    Ronan Cummins, series of articles of 2005-2006 in dblp
