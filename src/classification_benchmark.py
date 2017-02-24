@@ -285,7 +285,8 @@ if __name__ == '__main__':
     elif args.vectordir:
         print("Runing classification benchmark on learnt vectors in " + args.vectordir)
         vectors = [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]
-        results = Learning2Weight_ResultTable(args.resultfile, args.classification)
+        classification_mode = "multiclass" if vectors.num_categories() > 1 else "binary"
+        results = Learning2Weight_ResultTable(args.resultfile, classification_mode)
         for i,vecname in enumerate(vectors):
             print("Vector file: " + vecname)
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
