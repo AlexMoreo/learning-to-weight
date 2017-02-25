@@ -375,7 +375,7 @@ def main(argv=None):
         test_x, test_y   = data.get_test_set()
         test_x_weighted  = weight_vectors(test_x)
         vectorizer = "LtoW" + ('_Ltf' if FLAGS.learntf else '') + ('_Lidf' if FLAGS.learnidf else '') + \
-                     ('_Ln' if FLAGS.learnnorm else '')  + data.vectorizer_name
+                     ('_Ln' if FLAGS.learnnorm else '')  + '_input_'+data.vectorizer_name+('L1' if l1_norm else '')
         wv = WeightedVectors(vectorizer=vectorizer, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
