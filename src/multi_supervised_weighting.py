@@ -18,9 +18,11 @@ def main(argv=None):
     err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     outname = FLAGS.outname
+    confname = 'LtoW_' + ('Ltf' if FLAGS.learntf else '') + ('Lidf' if FLAGS.learnidf else '') + \
+               ('Ln' if FLAGS.learnnorm else '') + (FLAGS.tfmode)
     if not outname:
-        outname = '%s_C%s_FS%.2f_H%d_lr%.5f_O%s_Ln%s_Ltf%s_Lidf%d_run%d.pickle' % \
-                  (FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, 'adam',
+        outname = '%s_%s_C%s_FS%.2f_H%d_lr%.5f_O%s_Ln%s_Ltf%s_Lidf%d_run%d.pickle' % \
+                  (confname, FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, 'adam',
                    FLAGS.learnnorm, FLAGS.learntf, FLAGS.learnidf, FLAGS.run)
 
     # check if the vector has already been calculated
@@ -374,9 +376,7 @@ def main(argv=None):
         val_x_weighted = weight_vectors(val_x)
         test_x, test_y   = data.get_test_set()
         test_x_weighted  = weight_vectors(test_x)
-        vectorizer = "LtoW" + ('_Ltf' if FLAGS.learntf else '') + ('_Lidf' if FLAGS.learnidf else '') + \
-                     ('_Ln' if FLAGS.learnnorm else '')  + '_input_'+data.vectorizer_name+('L1' if l1_norm else '')
-        wv = WeightedVectors(vectorizer=vectorizer, from_dataset=data.name, from_category=FLAGS.cat,
+        wv = WeightedVectors(vectorizer=confname, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
