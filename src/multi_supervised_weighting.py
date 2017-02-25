@@ -12,16 +12,16 @@ from utils.tf_helpers import *
 from utils.result_table import BasicResultTable
 from utils.metrics import macroF1, microF1
 from feature_selection.tsr_function import ContTable
-
+from sklearn.preprocessing import normalize
 
 def main(argv=None):
     err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
 
     outname = FLAGS.outname
     if not outname:
-        outname = '%s_C%s_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
-                  (FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
-                   FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run)
+        outname = '%s_C%s_FS%.2f_H%d_lr%.5f_O%s_Ln%s_Ltf%s_Lidf%d_run%d.pickle' % \
+                  (FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, 'adam',
+                   FLAGS.learnnorm, FLAGS.learntf, FLAGS.learnidf, FLAGS.run)
 
     # check if the vector has already been calculated
     if not FLAGS.f:
@@ -30,11 +30,31 @@ def main(argv=None):
     init_time = time.time()
     pos_cat_code = FLAGS.cat
     feat_sel = FLAGS.fs
-    data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='tf', rep_mode='dense', positive_cat=pos_cat_code,
-                                feat_sel=feat_sel, sublinear_tf=False)
-    #print('L1-normalize')
-    #data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    #data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+
+    l1_norm = False
+    if FLAGS.tfmode == "tf":
+        vectorizer = "tf"
+        sublinear = False
+    elif FLAGS.tfmode == "sublinear_tf":
+        vectorizer = "tf"
+        sublinear = True
+    elif FLAGS.tfmode == "binary":
+        vectorizer = "binary"
+        sublinear = False
+    elif FLAGS.tfmode == "l1":
+        vectorizer = "tf"
+        sublinear = False
+        l1_norm = True
+    else: raise ValueError("tfmode not supported")
+
+    data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer=vectorizer, rep_mode='dense', positive_cat=pos_cat_code,
+                                feat_sel=feat_sel, sublinear_tf=sublinear)
+
+    if l1_norm:
+        print('L1-normalize')
+        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+
     #max_term_frequency = 1.0
     max_term_frequency = np.amax(data.devel_vec)
     print("|Tr|=%d" % data.num_devel_documents())
@@ -173,15 +193,28 @@ def main(argv=None):
                 tf_tensor = tf_tensor - tf_like(tf.zeros_like(x)) #removes the offset so that the tf factor for frequency 0 is 0
             return tf_tensor
 
-        tf_tensor = tf_like_nooffset(x)
-        #idf_tensor = idf_pool(idf_like(feat_info))
-        idf_tensor = idf_like_2(feat_info)
+        if FLAGS.learntf:
+            tf_tensor = tf_like_nooffset(x)
+        else:
+            tf_tensor = x
+
+        if FLAGS.learnidf:
+            #idf_tensor = idf_pool(idf_like(feat_info))
+            idf_tensor = idf_like_2(feat_info)
+        else:
+            idf_tensor = tf.ones_like(x)
         print "tf_tensor", tf_tensor.get_shape()
         print "idf_tensor", idf_tensor.get_shape()
 
         tf_ave = tf.reduce_mean(tf_tensor)
         idf_ave = tf.reduce_mean(idf_tensor)
-        normalized = normalization_like(tf.mul(tf_tensor, idf_tensor))
+        tfidf_tensor = tf.mul(tf_tensor, idf_tensor)
+
+        if FLAGS.learnnorm:
+            normalized = normalization_like(tfidf_tensor)
+        else:
+            normalized = tf.nn.l2_normalize(tfidf_tensor, dim=1)
+
         print "normalized", normalized.get_shape()
         logis_w, logis_b = get_projection_weights([nF, nC], 'logistic')
         #ffout = ff_multilayer(normalized, [2048, 1024], non_linear_function=tf.nn.relu, keep_prob=keep_p, name='ff_multilayer')
@@ -196,8 +229,8 @@ def main(argv=None):
         prediction = tf.round(y_)  # label the prediction as 0 if the P(y=1|x) < 0.5; 1 otherwhise
 
         #for plot
-        tf.get_variable_scope().reuse_variables()
-        tf_pred = tf_like_nooffset(freq_input)
+        #tf.get_variable_scope().reuse_variables()
+        #tf_pred = tf_like_nooffset(freq_input)
         #idf_pred = idf_pool(idf_like(tprfpr_input))
         # idf_pred = idf_like_2(tprfpr_input)
 
@@ -217,7 +250,6 @@ def main(argv=None):
         return {x: x_, y: y_, keep_p: drop_keep_p if dropout else 1.0}
 
     create_if_not_exists(FLAGS.checkpointdir)
-    create_if_not_exists(FLAGS.summariesdir)
     create_if_not_exists(FLAGS.outdir)
 
     def tf_wrapper(freq):
@@ -308,10 +340,10 @@ def main(argv=None):
                           'date': strftime("%d-%m-%Y", gmtime()),
                           'hiddensize': FLAGS.hidden,
                           'lrate': FLAGS.lrate,
-                          'optimizer': FLAGS.optimizer,
-                          'normalize': FLAGS.normalize,
-                          'nonnegative': FLAGS.forcepos,
-                          'pretrain': FLAGS.pretrain,
+                          'optimizer': 'adam',
+                          'learntf': FLAGS.learntf,
+                          'learnidf': FLAGS.learnidf,
+                          'learnnorm': FLAGS.learnnorm,
                           'iterations': log_steps,
                           'notes': FLAGS.notes,
                           'run': FLAGS.run}
@@ -342,7 +374,9 @@ def main(argv=None):
         val_x_weighted = weight_vectors(val_x)
         test_x, test_y   = data.get_test_set()
         test_x_weighted  = weight_vectors(test_x)
-        wv = WeightedVectors(vectorizer='full_LtoW', from_dataset=data.name, from_category=FLAGS.cat,
+        vectorizer = "LtoW" + ('_Ltf' if FLAGS.learntf else '') + ('_Lidf' if FLAGS.learnidf else '') + \
+                     ('_Ln' if FLAGS.learnnorm else '')  + data.vectorizer_name
+        wv = WeightedVectors(vectorizer=vectorizer, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,
                              teX=test_x_weighted, teY=test_y,
@@ -359,17 +393,14 @@ if __name__ == '__main__':
     flags.DEFINE_float('fs', 0.1, 'Indicates the proportion of features to be selected (default 0.1).')
     flags.DEFINE_integer('cat', None, 'Code of the positive category (default None, i.e., multiclass setting).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
-    flags.DEFINE_integer('hidden', 100, 'Number of hidden nodes (default 100).')
+    flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
     flags.DEFINE_float('lrate', .001, 'Initial learning rate (default .001)') #3e-4
-    flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
-    flags.DEFINE_boolean('normalize', True, 'Imposes normalization to the document vectors (default True)')
+    flags.DEFINE_string('tfmode', 'tf', 'Specifies the tf mode to select, in [tf, sublinear_tf, binary, l1] (default tf)')
+    flags.DEFINE_boolean('learnnorm', True, 'Learns the normalization function (default True)')
+    flags.DEFINE_boolean('learntf', True, 'Learns the tf-like function (default True)')
+    flags.DEFINE_boolean('learnidf', True, 'Learns the idf-like function (default True)')
     flags.DEFINE_string('checkpointdir', '../model', 'Directory where to save the checkpoints of the model parameters (default "../model")')
-    flags.DEFINE_string('summariesdir', '../summaries', 'Directory for Tensorboard summaries (default "../summaries")')
-    flags.DEFINE_string('pretrain', 'off', 'Pretrains the model parameters to mimic a given FS function, e.g., "infogain", "chisquare", "gss" (default "off")')
-    flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
-    flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
     flags.DEFINE_boolean('f', False, 'Forces the run, i.e., do not check if the vector has already been calculated.')
-    flags.DEFINE_string('computation', 'local', 'Computation mode, see documentation (default local)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
                                             '\n show: shows the plot during training'
@@ -380,18 +411,14 @@ if __name__ == '__main__':
     flags.DEFINE_string('outname', None, 'Output file name for learned vectors (default None --self defined with the rest of parameters).')
     flags.DEFINE_integer('run', 0, 'Specifies the number of run in case an experiment is to be replied more than once (default 0)')
     flags.DEFINE_string('notes', '', 'Informative notes to be stored within the pickle output file.')
-    flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
+    #flags.DEFINE_string('resultcontainer', '../results.csv', 'If indicated, saves the result of the logistic regressor trained (default ../results.csv)')
     flags.DEFINE_integer('maxsteps', 100000, 'Maximun number of iterations (default 100000).')
 
     err_param_range('dataset', FLAGS.dataset, TextCollectionLoader.valid_datasets)
+    err_param_range('tfmode', FLAGS.tfmode, ['tf','sublinear_tf','binary','l1'])
     err_param_range('cat', FLAGS.cat, valid_values=TextCollectionLoader.valid_catcodes[FLAGS.dataset] + [None])
-    err_param_range('optimizer', FLAGS.optimizer, ['sgd', 'adam', 'rmsprop'])
-    err_param_range('computation', FLAGS.computation, ['local','global'])
-    err_param_range('pretrain',  FLAGS.pretrain,  ['off', 'infogain', 'chisquare', 'gss', 'rel_factor', 'idf'])
     err_param_range('plotmode',  FLAGS.plotmode,  ['off', 'show', 'img', 'vid'])
     err_exception(FLAGS.fs <= 0.0 or FLAGS.fs > 1.0, 'Error: param fs should be in range (0,1]')
-    err_exception(FLAGS.computation == 'global' and FLAGS.plotmode != 'off', 'Error: plot mode should be off when computation is set to global.')
-    err_exception(FLAGS.computation == 'global' and FLAGS.pretrain != 'off', 'Error: pretrain mode should be off when computation is set to global.')
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
