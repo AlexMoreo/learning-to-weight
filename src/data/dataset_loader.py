@@ -1,23 +1,20 @@
 import cPickle as pickle
 import tarfile
-import time
 from glob import glob
 from os.path import join
 
-#import nltk
-#from nltk.corpus import movie_reviews
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import urllib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.feature_extraction.text import TfidfTransformer
 
 from custom_vectorizers import *
 from data.reuters21578_parser import ReutersParser
-from utils.helpers import *
 from feature_selection.round_robin import RoundRobin, FeatureSelectorFromRank
 from feature_selection.tsr_function import *
+from utils.helpers import *
+
 
 class Dataset:
     def __init__(self, data, target, target_names):
@@ -28,7 +25,7 @@ class Dataset:
 class TextCollectionLoader:
 
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
-    supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf']
+    supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
     unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
@@ -36,7 +33,7 @@ class TextCollectionLoader:
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
-                 sublinear_tf=False, global_policy="max"):
+                 sublinear_tf=False, global_policy="max", tsr_function=information_gain):
         err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
@@ -51,7 +48,7 @@ class TextCollectionLoader:
         self.fetch_dataset(dataset)
         self.get_coocurrence_matrix()
         self.binarize_classes()
-        self.feature_selection(feat_sel)
+        self.feature_selection(feat_sel=feat_sel, score_func=tsr_function)
         self.term_weighting()
         self.get_nonempty_indexes(valid_proportion)
         self.set_representation_mode(rep_mode)
@@ -134,9 +131,10 @@ class TextCollectionLoader:
         #if self.supervised_4cell_matrix != None:
         #    self.supervised_4cell_matrix = self.supervised_4cell_matrix[self.positive_cat:self.positive_cat+1,:]
 
-    def feature_selection(self, feat_sel, score_func=information_gain):
+    def feature_selection(self, feat_sel, score_func=information_gain, features_rank_pickle_path=None):
         if feat_sel==None: return
-        nF = self.devel_coocurrence.shape[1]
+        nD,nF = self.devel_coocurrence.shape
+        nC = self.num_categories()
         if isinstance(feat_sel, float):
             if feat_sel <=0.0 or feat_sel>1.0: raise ValueError("Feature selection ratio should be contained in (0,1]")
             feat_sel = int(feat_sel * nF)
@@ -146,20 +144,28 @@ class TextCollectionLoader:
         print('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
         #fs = SelectKBest(chi2, k=feat_sel)
         #check if the ranking of features for this setting has already been calculated
-        features_rank_pickle_path = join(self.data_path, 'RR_' + score_func.__name__ + '_nF' + str(nF) + '_pos' + str(self.positive_cat) + '_rank.pickle')
+        if features_rank_pickle_path is None:
+            features_rank_pickle_path = join(self.data_path,
+                                             'RR_' + score_func.__name__ + '_nF' + str(nF) +'_nD'+str(nD)+'_nC'+str(nC)+
+                                             '_pos' + str(self.positive_cat) + '_rank.pickle')
         if os.path.exists(features_rank_pickle_path):
             features_rank = pickle.load(open(features_rank_pickle_path, 'rb'))
             fs = FeatureSelectorFromRank(k=feat_sel, features_rank=features_rank)
             self.devel_coocurrence = fs.fit_transform(self.devel_coocurrence, self.devel.target)
             self.test_coocurrence = fs.transform(self.test_coocurrence)
+            if hasattr(self, 'devel_vec'): self.devel_vec = fs.transform(self.devel_vec)
+            if hasattr(self, 'test_vec'): self.test_vec = fs.transform(self.test_vec)
             self.supervised_4cell_matrix = None
         else:
-            self.rr = RoundRobin(score_func=score_func, k=feat_sel)
-            self.devel_coocurrence = self.rr.fit_transform(self.devel_coocurrence, self.devel.target)
-            self.test_coocurrence = self.rr.transform(self.test_coocurrence)
-            self.supervised_4cell_matrix = self.rr.supervised_4cell_matrix
+            fs = RoundRobin(score_func=score_func, k=feat_sel)
+            self.devel_coocurrence = fs.fit_transform(self.devel_coocurrence, self.devel.target)
+            self.test_coocurrence = fs.transform(self.test_coocurrence)
+            if hasattr(self, 'devel_vec'): self.devel_vec = fs.transform(self.devel_vec)
+            if hasattr(self, 'test_vec'): self.test_vec = fs.transform(self.test_vec)
+            self.supervised_4cell_matrix = fs.supervised_4cell_matrix
             print("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
-            pickle.dump(self.rr._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(fs._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
 
     def get_4cell_matrix(self):
         if self.supervised_4cell_matrix is None:
@@ -194,7 +200,7 @@ class TextCollectionLoader:
             elif self.vectorizer_name == 'bm25':
                 err_exception(self.sublinear_tf, "BM25 can not be combined with sublinear_tf")
                 vectorizer = BM25Transformer()
-            elif self.vectorizer_name in ['tfig', 'tfgr', 'tfchi2', 'tfrf', 'tfcw']:
+            elif self.vectorizer_name in self.supervised_tw_methods:
                 if self.vectorizer_name == 'tfig':
                     tsr_function = information_gain
                 elif self.vectorizer_name == 'tfchi2':
@@ -205,6 +211,8 @@ class TextCollectionLoader:
                     tsr_function = relevance_frequency
                 elif self.vectorizer_name == 'tfcw':
                     tsr_function = conf_weight
+                elif self.vectorizer_name == 'tffs':
+                    tsr_function = fisher_score_binary
                 vectorizer = TSRweighting(tsr_function, global_policy=self.global_policy,
                                           supervised_4cell_matrix=self.supervised_4cell_matrix,
                                           sublinear_tf=self.sublinear_tf)
@@ -284,7 +292,7 @@ class TextCollectionLoader:
     def fetch_20newsgroups(self, data_path=None, subset='train'):
         if data_path is None:
             data_path = os.path.join(get_data_home(), '20newsgroups')
-            create_if_not_exists(data_path)
+        create_if_not_exists(data_path)
         _20news_pickle_path = os.path.join(data_path, "20newsgroups." + subset + ".pickle")
         if not os.path.exists(_20news_pickle_path):
             metadata = ('headers', 'footers', 'quotes')

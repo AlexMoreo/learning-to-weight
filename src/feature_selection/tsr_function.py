@@ -6,6 +6,7 @@ from joblib import Parallel, delayed
 import time
 from scipy.sparse import csr_matrix, csc_matrix
 
+
 def get_probs(tpr, fpr, pc):
     # tpr = p(t|c) = p(tp)/p(c) = p(tp)/(p(tp)+p(fn))
     # fpr = p(t|_c) = p(fp)/p(_c) = p(fp)/(p(fp)+p(tn))
@@ -19,6 +20,20 @@ def get_probs(tpr, fpr, pc):
 def apply_tsr(tpr, fpr, pc, tsr):
     cell = get_probs(tpr, fpr, pc)
     return tsr(cell)
+
+def positive_information_gain(cell):
+    if cell.tpr() < cell.fpr():
+        return 0.0
+    else:
+        return information_gain(cell)
+
+def posneg_information_gain(cell):
+    ig = information_gain(cell)
+    if cell.tpr() < cell.fpr():
+        return -ig
+    else:
+        return ig
+
 
 def information_gain(cell):
     def ig_factor(p_tc, p_t, p_c):
@@ -168,7 +183,7 @@ def get_supervised_matrix(coocurrence_matrix, label_matrix, n_jobs=-1):
         #tini=time.time()
     if isinstance(coocurrence_matrix, csr_matrix):
         coocurrence_matrix = csc_matrix(coocurrence_matrix)
-    coocurrence_matrix = coocurrence_matrix.todense()
+    #coocurrence_matrix = coocurrence_matrix.todense()
     feature_sets = [nonzero_set(coocurrence_matrix, f) for f in range(nF)]
     #print time.time()-tini
     #tini = time.time()
@@ -190,3 +205,32 @@ def get_tsr_matrix(cell_matrix, tsr_score_funtion):
     tsr_matrix = [[tsr_score_funtion(cell_matrix[c,f]) for f in range(nF)] for c in range(nC)]
     #tsr_matrix = Parallel(n_jobs=-1, backend="threading")(delayed(tsr_with_index)(cell_matrix[c], self._score_func) for c in range(nC))
     return np.array(tsr_matrix)
+
+""" The Fisher-score [1] is not computed on the 4-cell contingency table, but can
+take as input any real-valued feature column (e.g., tf-idf weights).
+feat is the feature vector, and c is a binary classification vector.
+This implementation covers only the binary case, while the formula is defined for multiclass
+single-label scenarios, for which the version [2] might be preferred.
+[1] R.O. Duda, P.E. Hart, and D.G. Stork. Pattern classification. Wiley-interscience, 2012.
+[2] Gu, Q., Li, Z., & Han, J. (2012). Generalized fisher score for feature selection. arXiv preprint arXiv:1202.3725.
+"""
+def fisher_score_binary(feat, c):
+    neg = np.ones_like(c) - c
+
+    npos = np.sum(c)
+    nneg = np.sum(neg)
+
+    mupos = np.mean(feat[c == 1])
+    muneg = np.mean(feat[neg == 1])
+    mu = np.mean(feat)
+
+    stdpos = np.std(feat[c == 1])
+    stdneg = np.std(feat[neg == 1])
+
+    num = npos * ((mupos - mu) ** 2) + nneg * ((muneg - mu) ** 2)
+    den = npos * (stdpos ** 2) + nneg * (stdneg ** 2)
+
+    if den>0:
+        return num / den
+    else:
+        return num

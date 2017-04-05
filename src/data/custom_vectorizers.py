@@ -6,11 +6,10 @@ import sklearn
 import math
 from joblib import Parallel, delayed
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from feature_selection.tsr_function import *
+from tsr_function import *
 
 
 class BM25:
-
     def __init__(self, k1=1.2, b=0.75, stop_words=None, min_df=1):
         self.k1 = k1
         self.b = b
@@ -96,27 +95,32 @@ class TSRweighting:
 
     def fit(self, X, y):
         print("TSR weighting")
-        if self.sublinear_tf:
-            self.unsupervised_vectorizer = TfidfTransformer(norm=None, use_idf=False, smooth_idf=False, sublinear_tf=True).fit(X)
-        if self.supervised_4cell_matrix is None:
-            print("Computing the 4-cell matrix")
-            self.supervised_4cell_matrix = get_supervised_matrix(X, y, n_jobs=self.n_jobs)
+        self.unsupervised_vectorizer = TfidfTransformer(norm=None, use_idf=False, smooth_idf=False, sublinear_tf=self.sublinear_tf).fit(X)
+
+        nD,nC = y.shape
+        nF = X.shape[1]
+
+        if self.tsr_function.__name__ == fisher_score_binary.__name__:
+            if nC > 1: print("[Warning]: The Fisher score current implementation does only cover the binary case. A pooling will be applied.")
+            tf_X = self.unsupervised_vectorizer.transform(X).toarray()
+            tsr_matrix = [[fisher_score_binary(tf_X[:,f],y[:,c]) for f in range(nF)] for c in range(nC)]
         else:
-            nC=y.shape[1]
-            nF = X.shape[1]
-            if self.supervised_4cell_matrix.shape != (nC, nF): raise ValueError("Shape of supervised information matrix is inconsistent with X and y")
-        print("Computing the TSR matrix")
-        tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self.tsr_function)
+            if self.supervised_4cell_matrix is None:
+                print("Computing the 4-cell matrix")
+                self.supervised_4cell_matrix = get_supervised_matrix(X, y, n_jobs=self.n_jobs)
+            else:
+                if self.supervised_4cell_matrix.shape != (nC, nF): raise ValueError("Shape of supervised information matrix is inconsistent with X and y")
+            print("Computing the TSR matrix")
+            tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self.tsr_function)
         if self.global_policy == 'ave':
-            self.global_tsr_matrix = np.average(tsr_matrix, axis=0)
+            self.global_tsr_vector = np.average(tsr_matrix, axis=0)
         elif self.global_policy == 'wave':
-            nD,nC=y.shape
             category_prevalences = [sum(y[:,c])*1.0/nD for c in range(nC)]
-            self.global_tsr_matrix = np.average(tsr_matrix, axis=0, weights=category_prevalences)
+            self.global_tsr_vector = np.average(tsr_matrix, axis=0, weights=category_prevalences)
         elif self.global_policy == 'sum':
-            self.global_tsr_matrix = np.sum(tsr_matrix, axis=0)
+            self.global_tsr_vector = np.sum(tsr_matrix, axis=0)
         elif self.global_policy == 'max':
-            self.global_tsr_matrix = np.amax(tsr_matrix, axis=0)
+            self.global_tsr_vector = np.amax(tsr_matrix, axis=0)
 
     def fit_transform(self, X, y):
         self.fit(X,y)
@@ -124,10 +128,8 @@ class TSRweighting:
 
     def transform(self, X):
         if not hasattr(self, 'global_tsr_matrix'): raise NameError('TSRweighting: transform method called before fit.')
-        if self.sublinear_tf:
-            X = self.unsupervised_vectorizer.transform(X)
-        X = X.toarray()
-        weighted_X = np.multiply(X, self.global_tsr_matrix)
+        tf_X = self.unsupervised_vectorizer.transform(X).toarray()
+        weighted_X = np.multiply(tf_X, self.global_tsr_vector)
         weighted_X = sklearn.preprocessing.normalize(weighted_X, norm='l2', axis=1, copy=False)
         return scipy.sparse.csr_matrix(weighted_X)
 
