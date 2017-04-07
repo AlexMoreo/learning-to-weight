@@ -1,10 +1,12 @@
 import sys
 import math
+from sklearn import random_projection
+from future_work.random_indexing import RandomIndexing
 import random as rn
-def warn(*args, **kwargs):
-    pass
-import warnings
-warnings.warn = warn
+#def warn(*args, **kwargs):
+#    pass
+#import warnings
+#warnings.warn = warn
 import numpy as np
 from data.dataset_loader import TextCollectionLoader
 from sklearn.feature_extraction.text import *
@@ -26,6 +28,20 @@ def linear_svm(data):
                   'dual': [True, False]}
     model = LinearSVC()
     fit_and_test_model(data, parameters, model)
+
+def linear_svm_without_gridsearch(data):
+    model = OneVsRestClassifier(LinearSVC())
+
+    Xtr, ytr = data.get_devel_set()
+    trained_model = model.fit(Xtr, ytr)
+
+    Xte, yte = data.get_test_set()
+    yte_ = trained_model.predict(Xte)
+
+    macro_f1 = macroF1(yte, yte_)
+    micro_f1 = microF1(yte, yte_)
+    print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+
 
 def fit_model_hyperparameters(data, parameters, model):
     single_class = data.num_categories() == 1
@@ -59,61 +75,101 @@ def fit_and_test_model(data, parameters, model):
     micro_f1 = microF1(yte, yte_)
     print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
 
-#the round_dim prevents empty dimensions
-def get_random_index(dimensions, non_zeros=2, round_dim=-1):
-    non_zero_dim_value = {}
-    val = 1.0 / math.sqrt(non_zeros)
-    while len(non_zero_dim_value) < non_zeros:
-        if round_dim != -1:
-            rand_dim = round_dim
-            round_dim = -1
-        else:
-            rand_dim = rn.randint(0,dimensions-1)
-        if rand_dim not in non_zero_dim_value:
-            non_zero_dim_value[rand_dim] = +val if rn.random() < 0.5 else -val
-    rand_vector = np.zeros(dimensions)
-    rand_vector[non_zero_dim_value.keys()] = non_zero_dim_value.values()
-    return rand_vector
 
-def get_random_index_dictionary(original_dim, reduced_dim, non_zeros):
-    return {i:get_random_index(dimensions=reduced_dim, non_zeros=non_zeros, round_dim=i%reduced_dim) for i in range(original_dim)}
+class ConditionalRandomIndexing(RandomIndexing):
 
-def as_projection_matrix(random_dic):
-    return np.vstack([rand_vec for dim, rand_vec in sorted(random_dic.items())])
+    def __init__(self, latent_dimensions, non_zeros=2, positive=False, prob_interpretation="l1"):
+        if prob_interpretation not in ["l1", "softmax"]:
+            raise ValueError("Error: probabilistic interpretation should be either 'l1' or 'softmax'")
+        self.prob_interpretation=prob_interpretation
+        super(ConditionalRandomIndexing, self).__init__(latent_dimensions, non_zeros, positive)
 
-def transform(cooc_matrix, projection_matrix):
-    return csr_matrix(cooc_matrix * projection_matrix)
+    # takes a distribution of events (e.g., column of a coocurrence matrix indicating the amount of times the feature is
+    # present in each document) and transforms it into a multinomial distribution; this transformation could be carried out
+    # through an L1 normalization (default) or a softmax
+    def interpret_distribution_as_multinomial(self, x):
+        if self.prob_interpretation == "l1":
+            norm = np.sum(x)
+            if norm > 0:
+                return x / norm
+            return x
+        elif self.prob_interpretation == "softmax":
+            e_x = np.exp(x - np.max(x))
+            return e_x / e_x.sum()
 
+    #the round_dim prevents empty dimensions
+    def get_conditional_random_index(self, conditional_distribution):
+        val = 1.0 / math.sqrt(self.non_zeros)
+        sampled_dims = np.random.multinomial(self.non_zeros, conditional_distribution)
+        random_vector = sampled_dims * val
+        if not self.positive:
+            length = conditional_distribution.shape[0]
+            random_vector[np.random.permutation(length)[:length/2]] *= -1
+        return random_vector
 
-def colisions(projection_matrix):
-    nF,nR = projection_matrix.shape
-    return np.mean(np.sum(projection_matrix, axis=0))
+    def sample_coocurrence_events(self, coocurrence_matrix, n_samples):
+        nD, nF = coocurrence_matrix.shape
+        all_doc_indexes = range(nD)
+        # repeats all document-index whenever possible, and fills the remainder with a permutation
+        # eg nD=4, n_samples=11 -> [0,1,2,3]+[0,1,2,3]+[2,1,3]
+        selection = all_doc_indexes * (n_samples/nD) + np.random.permutation(nD)[:n_samples%nD].tolist()
+        return coocurrence_matrix[selection, :].toarray()
+
+    def get_random_index_dictionary(self, coocurrence_matrix):
+        nD,nF = coocurrence_matrix.shape
+        sampled_coocurrence = self.sample_coocurrence_events(coocurrence_matrix, self.latent_dimensions)
+        return {i:self.get_conditional_random_index(self.interpret_distribution_as_multinomial(sampled_coocurrence[:,i]))
+                for i in range(nF)}
+
 
 data = TextCollectionLoader(dataset='reuters21578')
+
+
 
 nD = data.num_devel_documents()
 nF = data.num_features()
 
-k = 2 #(int)(0.01 * nF)
+nR = 5000
+# nR = nF #without dimensionality reduction
+non_zeros = 2
 
-#nR = nF #without dimensionality reduction
-nR = nF / 2
+random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False)
+#random_indexing = ConditionalRandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, prob_interpretation="softmax")
 
-print "getting dictionary"
-random_dictionary = get_random_index_dictionary(nF, nR, k)
-proj_matrix = as_projection_matrix(random_dictionary)
-print "collisions", colisions(proj_matrix)
+if False:
+    print "Gaussian random projection"
+    print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+    #transformer = random_projection.SparseRandomProjection(n_components=nR, density=2.0/nR)
+    transformer = random_projection.SparseRandomProjection(n_components=nR)
+    data.devel_vec = transformer.fit_transform(data.devel_vec)
+    data.test_vec = transformer.transform(data.test_vec)
+    print data.devel_vec.shape
+    print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+    print "classify"
+    linear_svm_without_gridsearch(data)
+    sys.exit()
+    #0.533 macro-f1, 0.833 micro-f1 with density density=2.0/nR
+    #0.556 macro-f1, 0.849 micro-f1
 
-print "projecting"
-data.devel_vec = transform(data.devel_vec, proj_matrix)
-data.test_vec = transform(data.test_vec, proj_matrix)
-print "done"
+print "random indexing"
+print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+data.devel_vec = random_indexing.fit_transform(data.devel_vec)
+data.test_vec   = random_indexing.transform(data.test_vec)
+print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
 
-linear_svm(data)
+#print "classification / test"
+linear_svm_without_gridsearch(data)
 
-#coocurrence: Test scores: 0.583 macro-f1, 0.854 micro-f1
-# LRI, nR=nF/2Test scores: 0.585 macro-f1, 0.854 micro-f1
+#coocurrence:           Test scores: 0.583 macro-f1, 0.854 micro-f1
+# LRI, nR=nF/2 (k=2)    Test scores: 0.590 macro-f1, 0.853 micro-f1
+# LRI, nR=nF/2 (k=2)    Test scores: 0.594 macro-f1, 0.855 micro-f1
+# RI,  nR=nF/2 (k=5)    Test scores: 0.584 macro-f1, 0.852 micro-f1
+# CRI, nR=nF/2 (k=2) L1 Test scores: 0.578 macro-f1, 0.846 micro-f1
 
-
-
+#nF, k=10 RI Test scores: 0.562 macro-f1, 0.852 micro-f1
+#nF, k=2  RI Test scores: 0.564 macro-f1, 0.855 micro-f1
+#5000, k=2  RI Test scores: 0.550 macro-f1, 0.843 micro-f1
+#nF, k=10 CRI Test scores: 0.560 macro-f1, 0.850 micro-f1
+#nF, k=2  CRI Test scores: 0.562 macro-f1, 0.854 micro-f1
+#5000 k=2  CRI Test scores: 0.550 macro-f1, 0.846 micro-f1
 

@@ -40,9 +40,7 @@ class RoundRobin:
         tsr_matrix = get_tsr_matrix(self.supervised_4cell_matrix, self._score_func)
 
         #enhance the tsr_matrix with the feature index
-        tsr_matrix = [[(tsr_matrix[c,f], f) for f in range(nF)] for c in range(nC)]
-        for c in range(nC):
-            tsr_matrix[c].sort(key=lambda x: x[0]) #sort by tsr
+        tsr_matrix = [[(tsr_matrix[c,f], f) for f in range(nF)].sort(key=lambda x: x[0]) for c in range(nC)]
 
         sel_feats = set()
         self._features_rank = []

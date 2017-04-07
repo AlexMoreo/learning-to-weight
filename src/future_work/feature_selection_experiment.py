@@ -178,6 +178,26 @@ def frequency_classpreservation_clean_equivalent_class_encoding(true_labels):
         mod_labels.append(np.concatenate((document_labels, ec_vector)))
     return np.array(mod_labels)
 
+def removing_redundancy_class_encoding(true_labels):
+    nD, nC = true_labels.shape
+    class_encodding = [true_labels[:,i] for i in range(nC)]
+    new_classes = []
+    while True:
+        remC = len(class_encodding) #remaining classes to process
+        if remC > 0:
+            prevalence_encodding = [(np.sum(class_encodding[i]),class_encodding[i]) for i in range(remC)]
+            prevalence_encodding.sort(key=lambda x: x[0], reverse=True)
+            highest_prevalence, most_populated_class = prevalence_encodding.pop(0)
+            if highest_prevalence > 0: #the most prevalent class has some elements
+                new_classes.append(most_populated_class)
+                if remC-1 > 0:
+                    class_encodding = zip(*prevalence_encodding)[1]
+                    class_encodding = [c - c*most_populated_class for c in class_encodding]
+                else: break
+            else: break
+        else: break
+
+    return np.transpose(np.vstack(new_classes))
 
 #------------------------------------------------------------------------------------------------------------------------
 
@@ -195,77 +215,129 @@ def check_ratios_agreement(ratios, fs_ratios):
     return True
 
 
-def plot_fs_roundrobin(dataset, fs_ratios, resultfile, tsr_function):
+def plot_fs_roundrobin(dataset, fs_ratios, resultfile, tsr_function, plotter, color, legend):
     if os.path.exists(resultfile):
         print "Reading pre-calculated results from",resultfile
         ratios, macro, micro = read_result_file(resultfile)
-        if check_ratios_agreement(ratios, fs_ratios):
-            return macro, micro
+        if not check_ratios_agreement(ratios, fs_ratios):
+            print "Error in ratios, do not coincide"
+            sys.exit()
 
-    with open(resultfile, 'w') as results:
-        fs_ratios.sort()
-        result_series = []
-        for i,ratio in enumerate(fs_ratios):
-            data = TextCollectionLoader(dataset=dataset, feat_sel=ratio, tsr_function=tsr_function)
-            macro_f1, micro_f1 = linear_svm(data)
-            results.write(resultpath + + str(ratio) + "\t" + str(macro_f1) + "\t" + str(micro_f1) + "\n")
-            result_series.append((macro_f1, micro_f1))
+    else:
+        with open(resultfile, 'w') as results:
+            fs_ratios.sort()
+            result_series = []
+            for i,ratio in enumerate(fs_ratios):
+                data = TextCollectionLoader(dataset=dataset, feat_sel=ratio, tsr_function=tsr_function)
+                macro_f1, micro_f1 = linear_svm(data)
+                results.write(resultpath + str(ratio) + "\t" + str(macro_f1) + "\t" + str(micro_f1) + "\n")
+                result_series.append((macro_f1, micro_f1))
 
-    return zip(*result_series)
+    macro,micro = zip(*result_series)
+    plotter.add_result(macro, micro, color, legend)
 
-def plot_fs_roundrobin_eqclasses(dataset, fs_ratios, resultfile, tsr_function, eq_class_method=naive_equivalent_class_encoding):
+def plot_fs_roundrobin_eqclasses(dataset, fs_ratios, resultfile, tsr_function, eq_class_method,
+                                 plotter, color, legend):
     if os.path.exists(resultfile):
         print "Reading pre-calculated results from",resultfile
         ratios, macro, micro = read_result_file(resultfile)
-        if check_ratios_agreement(ratios, fs_ratios):
-            return macro, micro
+        if not check_ratios_agreement(ratios, fs_ratios):
+            print "Error in ratios, do not coincide"
+            sys.exit()
+    else:
+        with open(resultfile, 'w') as results:
+            data = TextCollectionLoader(dataset=dataset)
+            original_classification = data.devel.target
+            ranked_features_pickle = resultpath + dataset+'_'+tsr_function.__name__+'_'+eq_class_method.__name__+".pickle"
+            eqclass_classification = eq_class_method(original_classification)
 
-    with open(resultfile, 'w') as results:
-        data = TextCollectionLoader(dataset=dataset)
-        original_classification = data.devel.target
-        ranked_features_pickle = resultpath + dataset+'_'+tsr_function.__name__+'_'+eq_class_method.__name__+".pickle"
-        eqclass_classification = eq_class_method(original_classification)
+            fs_ratios.sort()
+            result_series = []
+            for i,ratio in enumerate(fs_ratios):
+                print "Ratio",ratio,"completed",(i+1),'/',len(fs_ratios)
+                data.devel.target = eqclass_classification
+                data.feature_selection(feat_sel=ratio, score_func=tsr_function, features_rank_pickle_path=ranked_features_pickle)
+                data.devel.target = original_classification
 
-        fs_ratios.sort()
-        result_series = []
-        for i,ratio in enumerate(fs_ratios):
-            print "Ratio",ratio,"completed",(i+1),'/',len(fs_ratios)
-            data.devel.target = eqclass_classification
-            data.feature_selection(feat_sel=ratio, score_func=tsr_function, features_rank_pickle_path=ranked_features_pickle)
-            data.devel.target = original_classification
+                macro_f1, micro_f1 = linear_svm(data)
+                results.write(resultpath +str(ratio)+"\t"+str(macro_f1)+"\t"+str(micro_f1)+"\n")
+                result_series.append((macro_f1, micro_f1))
 
-            macro_f1, micro_f1 = linear_svm(data)
-            results.write(resultpath +str(ratio)+"\t"+str(macro_f1)+"\t"+str(micro_f1)+"\n")
-            result_series.append((macro_f1, micro_f1))
+                #reload data
+                if i < len(fs_ratios)-1:
+                    data = TextCollectionLoader(dataset=dataset)
 
-            #reload data
-            if i < len(fs_ratios)-1:
-                data = TextCollectionLoader(dataset=dataset)
-
-    return zip(*result_series)
+    macro,micro = zip(*result_series)
+    plotter.add_result(macro, micro, color, legend)
 
 
-resultpath = "../results/futurework/feature_selection/"
+resultpath = "/home/moreo/learning_to_weight/results/futurework/feature_selection/"
 dataset = "reuters21578"
+
 feat_sel = [0.005, 0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5]
 
-tsr_function = posneg_information_gain
+tsr_function = information_gain
 #tsr_function = gss
-result_prefix = dataset+"_"+tsr_function.__name__
-orig_macro_f1, orig_micro_f1 = plot_fs_roundrobin(dataset=dataset,fs_ratios=feat_sel, tsr_function=tsr_function,
-                                                  resultfile=result_prefix+"_RR.results")
-eq_macro_f1, eq_micro_f1 = plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
-                                                        resultfile=result_prefix+"_naiveEC.results", eq_class_method=naive_equivalent_class_encoding)
-fr_eq_macro_f1, fr_eq_micro_f1 = plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
-                                                        resultfile=result_prefix+"_freq_EC.results", eq_class_method=frequency_equivalent_class_encoding)
-frp_eq_macro_f1, frp_eq_micro_f1 = plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
-                                                        resultfile=result_prefix+"_freqP_EC.results", eq_class_method=frequency_classpreservation_equivalent_class_encoding)
-cleanfrp_eq_macro_f1, cleanfrp_eq_micro_f1 = plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
-                                                        resultfile=result_prefix+"_freqPClean_EC.results", eq_class_method=frequency_classpreservation_clean_equivalent_class_encoding)
+result_prefix = resultpath + dataset+"_"+tsr_function.__name__
+
+class PlotFS:
+    def __init__(self, x_axis):
+        self.x_axis = x_axis
+        self.macro=[]
+        self.micro=[]
+        self.legend=[]
+
+    def add_result(self, macro, micro, color, label):
+        plot_macro, = plt.plot(x_axis, macro, color+'-o', label=label+" Macro-F1")
+        plot_micro, = plt.plot(x_axis, micro, color + '-^', label=label + " micro-F1")
+        self.macro.append(plot_macro)
+        self.micro.append(plot_micro)
+        self.legend += [plot_macro, plot_micro]
+
+    def plot(self, save=None, show=True):
+        plt.legend(self.legend)
+        box = plt.subplot(111).get_position()
+        plt.subplot(111).set_position([box.x0, box.y0 + box.height * 0.1,
+                                       box.width, box.height * 0.9])
+        plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
+                   fancybox=True, shadow=True, ncol=5)
+        plt.title(dataset.title() + ' ' + tsr_function.__name__.title())
+        plt.ylabel('F1')
+        plt.xlabel('selection ratio')
+        plt.grid(True)
+        if save:
+            plt.savefig(save, format='PDF')
+        if show:
+            plt.show()
 
 
 x_axis = feat_sel
 
+plotter = PlotFS(x_axis)
+
+#plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+#                                                        resultfile=result_prefix+"_freeFS.results", eq_class_method=removing_redundancy_class_encoding)
+
+plot_fs_roundrobin(dataset=dataset,fs_ratios=feat_sel, tsr_function=tsr_function,
+                   resultfile=result_prefix+"_RR.results", plotter=plotter, color='r', legend='RR')
+plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+                             resultfile=result_prefix+"_free.results", eq_class_method=removing_redundancy_class_encoding, plotter=plotter, color='g', legend='Free')
+"""
+plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+                             resultfile=result_prefix+"_naiveEC.results", eq_class_method=naive_equivalent_class_encoding, plotter=plotter, color='g', legend='Naive')
+plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+                                                        resultfile=result_prefix+"_freq_EC.results", eq_class_method=frequency_equivalent_class_encoding)
+plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+                                                        resultfile=result_prefix+"_freqP_EC.results", eq_class_method=frequency_classpreservation_equivalent_class_encoding)
+plot_fs_roundrobin_eqclasses(dataset=dataset, fs_ratios=feat_sel,tsr_function=tsr_function,
+                                                        resultfile=result_prefix+"_freqPClean_EC.results", eq_class_method=frequency_classpreservation_clean_equivalent_class_encoding)
+"""
+
+plotter.plot(save=resultpath +'plot'+dataset+tsr_function.__name__+'.pdf', show=True)
+
+sys.exit()
+
+"""
 plot_orig_MF1,_ = plt.plot(x_axis, orig_macro_f1, 'ro', x_axis, orig_macro_f1, 'r-', label='RR Macro-F1')
 plot_orig_mF1,_ = plt.plot(x_axis, orig_micro_f1, 'r^', x_axis, orig_micro_f1, 'r-', label='RR micro-F1')
 plot_eqc_MF1,_ = plt.plot(x_axis, eq_macro_f1, 'g--', x_axis, eq_macro_f1, 'g-', label='ec(RR) Macro-F1')
@@ -291,5 +363,5 @@ plt.xlabel('selection ratio')
 plt.grid(True)
 plt.savefig(resultpath +'plot'+dataset+tsr_function.__name__+'.pdf', format='PDF')
 plt.show()
-
+"""
 
