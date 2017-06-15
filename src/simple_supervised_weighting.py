@@ -39,8 +39,8 @@ def main(argv=None):
                                 sublinear_tf=sublinear)
     if l1:
         print('L1-normalize')
-        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+        data._devel_vec = normalize(data._devel_vec, norm='l1', axis=1, copy=False)
+        data._test_vec  = normalize(data._test_vec, norm='l1', axis=1, copy=False)
     #max_term_frequency = 1.0
     #max_term_frequency = np.amax(data.devel_vec)
     print("|Tr|=%d" % data.num_devel_documents())

@@ -158,8 +158,8 @@ nR = nF
 non_zeros = 2 # nF*0.01
 random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False)
 
-data.devel_vec  = random_indexing.fit_transform(data.devel_vec)
-data.test_vec   = random_indexing.transform(data.test_vec)
+data._devel_vec  = random_indexing.fit_transform(data._devel_vec)
+data._test_vec   = random_indexing.transform(data._test_vec)
 
 P = random_indexing.projection_matrix
 R = np.dot(P.T,P)

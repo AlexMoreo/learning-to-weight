@@ -31,8 +31,8 @@ def main(argv=None):
     feat_sel = FLAGS.fs
     data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='count', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel)
     print('L1-normalize')
-    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    data._devel_vec = normalize(data._devel_vec, norm='l1', axis=1, copy=False)
+    data._test_vec  = normalize(data._test_vec, norm='l1', axis=1, copy=False)
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence()))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence()))
     print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence()))

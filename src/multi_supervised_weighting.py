@@ -14,65 +14,67 @@ from utils.metrics import macroF1, microF1
 from feature_selection.tsr_function import ContTable
 from sklearn.preprocessing import normalize
 
-def main(argv=None):
-    err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
-
-    outname = FLAGS.outname
-    confname = 'LtoW_' + ('Ltf' if FLAGS.learntf else '') + ('Lidf' if FLAGS.learnidf else '') + \
-               ('Ln' if FLAGS.learnnorm else '') + (FLAGS.tfmode)
-    if not outname:
-        outname = '%s_%s_C%s_FS%.2f_H%d_lr%.5f_O%s_Ln%s_Ltf%s_Lidf%d_run%d.pickle' % \
-                  (confname, FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs, FLAGS.hidden, FLAGS.lrate, 'adam',
-                   FLAGS.learnnorm, FLAGS.learntf, FLAGS.learnidf, FLAGS.run)
-
-    # check if the vector has already been calculated
-    if not FLAGS.f:
-        err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
-
-    init_time = time.time()
-    pos_cat_code = FLAGS.cat
-    feat_sel = FLAGS.fs
-
-    l1_norm = False
-    if FLAGS.tfmode == "tf":
+def data_loader(dataset, tfmode, positive_cat, feat_sel):
+    if tfmode == "tf":
         vectorizer = "tf"
         sublinear = False
-    elif FLAGS.tfmode == "sublinear_tf":
+    elif tfmode == "sublinear_tf":
         vectorizer = "tf"
         sublinear = True
-    elif FLAGS.tfmode == "binary":
-        vectorizer = "binary"
+    elif tfmode in ["binary", "l1"]:
+        vectorizer = tfmode
         sublinear = False
-    elif FLAGS.tfmode == "l1":
-        vectorizer = "tf"
-        sublinear = False
-        l1_norm = True
-    else: raise ValueError("tfmode not supported")
+    else:
+        raise ValueError("tfmode not supported")
 
-    data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer=vectorizer, rep_mode='dense', positive_cat=pos_cat_code,
+    data = TextCollectionLoader(dataset=dataset, vectorizer=vectorizer, rep_mode='dense', positive_cat=positive_cat,
                                 feat_sel=feat_sel, sublinear_tf=sublinear)
 
-    if l1_norm:
-        print('L1-normalize')
-        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-        data.test_vec  = normalize(data.test_vec, norm='l1', axis=1, copy=False)
-
-    #max_term_frequency = 1.0
-    max_term_frequency = np.amax(data.devel_vec)
     print("|Tr|=%d" % data.num_devel_documents())
     print("|Te|=%d" % data.num_test_documents())
     print("|C|=%d" % data.num_categories())
     print("|V|=%d" % data.num_features())
     print("|C|=%d, %s" % (data.num_categories(), str(data.get_categories())))
 
-    print('Getting supervised correlations')
+    return data
 
+def define_config_name(FLAGS):
+    outname = FLAGS.outname
+    confname = 'LtoW_' + ('Ltf' if FLAGS.learntf else '') + ('Lidf' if FLAGS.learnidf else '') + \
+               ('Ln' if FLAGS.learnnorm else '') + (FLAGS.tfmode)
+    if not outname:
+        outname = '%s_%s_C%s_FS%.2f_H%d_lr%.5f_O%s_Ln%s_Ltf%s_Lidf%d_run%d.pickle' % \
+                  (confname, FLAGS.dataset[:3], str(FLAGS.cat) if FLAGS.cat is not None else "multiclass", FLAGS.fs,
+                   FLAGS.hidden, FLAGS.lrate, 'adam',
+                   FLAGS.learnnorm, FLAGS.learntf, FLAGS.learnidf, FLAGS.run)
+
+    # check if the vector has already been calculated
+    if not FLAGS.f:
+        err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+
+    return outname
+
+def get_tpr_fpr_statistics(data):
     nC = data.num_categories()
     nF = data.num_features()
-
     matrix_4cell = data.get_4cell_matrix()
     feat_corr_info = np.array([[[matrix_4cell[c, f].tpr(), matrix_4cell[c, f].fpr()] for f in range(nF)] for c in range(nC)])
     info_by_feat = feat_corr_info.shape[-1]
+    return feat_corr_info, info_by_feat
+
+def main(argv=None):
+
+    err_exception(argv[1:], "Error in parameters %s (--help for documentation)." % argv[1:])
+
+    outname = define_config_name(FLAGS)
+
+    print('Loading text collection')
+    data = data_loader(dataset=FLAGS.dataset, tfmode=FLAGS.tfmode, positive_cat=FLAGS.cat, feat_sel=FLAGS.fs)
+    nC = data.num_categories()
+    nF = data.num_features()
+
+    print('Getting supervised correlations')
+    feat_corr_info, info_by_feat = get_tpr_fpr_statistics(data)
 
     x_size = nF
     batch_size = FLAGS.batchsize if FLAGS.batchsize!=-1 else data.num_tr_documents()
