@@ -119,7 +119,7 @@ with open('Kernel_RI_results.txt', 'w') as fo:
                 experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', dataset, nF, fo)
 
             for run in range(5):
-                for nR in [nF/2, nF, int(nF*1.25)]:
+                for nR in [5000, 10000, nF/2, nF, int(nF*1.25)]:
                     print('Running {} nR={} non-zero={}...'.format(dataset,nR,non_zeros))
                     data = TextCollectionLoader(dataset=dataset)
                     X_train, y_train = data.get_devel_set()
