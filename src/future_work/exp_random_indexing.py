@@ -102,26 +102,26 @@ def svc_ri_kernel(random_indexer):
 def experiment(Xtr,ytr,Xte,yte,learner,method,dataset,nF,fo,run=0):
     macro_f1, micro_f1, t_train, t_test = learner_without_gridsearch(Xtr,ytr,Xte,yte, learner)
     fo.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method, dataset, nF, run, t_train, t_test, macro_f1, micro_f1))
+    fo.flush()
 
 with open('Kernel_RI_results.txt', 'w') as fo:
     fo.write("Method\tdataset\tnF\trun\ttrainTime\ttestTime\tMacroF1\tmicroF1\n")
 
-    for dataset in TextCollectionLoader.valid_datasets:
-        data = TextCollectionLoader(dataset=dataset, feat_sel=0.05)
+    bow_computed = False
+    for non_zeros in [2, 5, 10]:
+        for dataset in TextCollectionLoader.valid_datasets:
+            data = TextCollectionLoader(dataset=dataset)
+            nF = data.num_features()
 
-        nD = data.num_devel_documents()
-        nF = data.num_features()
-        nC = data.num_categories()
+            if not bow_computed:
+                X_train, y_train = data.get_devel_set()
+                X_test,  y_test = data.get_test_set()
+                experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', dataset, nF, fo)
 
-        X_train, y_train = data.get_devel_set()
-        X_test,  y_test = data.get_test_set()
-        experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', dataset, nF, fo)
-
-        for non_zeros in [2, 5, 10]:
             for run in range(5):
-                for nR in [nF, nF/2, int(nF*1.25)]:
+                for nR in [nF/2, nF, int(nF*1.25)]:
                     print('Running {} nR={} non-zero={}...'.format(dataset,nR,non_zeros))
-                    data = TextCollectionLoader(dataset=dataset,feat_sel=0.05)
+                    data = TextCollectionLoader(dataset=dataset)
                     X_train, y_train = data.get_devel_set()
                     X_test, y_test = data.get_test_set()
 
@@ -131,5 +131,5 @@ with open('Kernel_RI_results.txt', 'w') as fo:
 
                     experiment(X_train, y_train, X_test, y_test, LinearSVC(), 'RI(%d)'%non_zeros, dataset, nR, fo, run=run)
                     experiment(X_train, y_train, X_test, y_test, svc_ri_kernel(random_indexing), 'KernelRI(%d)' % non_zeros, dataset, nR, fo, run=run)
-                    fo.flush()
+        bow_computed = True
         print('Done!')
