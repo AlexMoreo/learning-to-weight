@@ -28,6 +28,14 @@ def single_metric_statistics(true_labels, predicted_labels):
     if tp+fp+fn+tn != len(true_labels): raise ValueError("Format not consistent between true and predicted labels.")
     return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
 
+# def fscore_with_tensors():
+#     tp = tf.cast(tf.count_nonzero(self.prediction * self.y), tf.float32)
+#     fp = tf.cast(tf.count_nonzero(self.prediction * (self.y - 1)), tf.float32)
+#     fn = tf.cast(tf.count_nonzero((self.prediction - 1) * self.y), tf.float32)
+#     precision = tp / (tp + fp)
+#     recall = tp / (tp + fn)
+#     fscore = (2 * precision * recall) / (precision + recall)
+
 #if the classifier is single class, then the prediction is a vector of shape=(nD,) which causes issues when compared
 #to the true labels (of shape=(nD,1)). This method increases the dimensions of the predictions.
 def __check_consistency_and_adapt(true_labels, predictions):
