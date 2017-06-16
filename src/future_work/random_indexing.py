@@ -132,28 +132,41 @@ def linear_svm(data):
     model = LinearSVC()
     fit_and_test_model(data, parameters, model)
 
-def learner_without_gridsearch(data, learner):
-    model = OneVsRestClassifier(learner, n_jobs=7)
-
+def learner_without_gridsearch(data, learner, cat=-1):
     Xtr, ytr = data.get_devel_set()
-    trained_model = model.fit(Xtr, ytr)
-
     Xte, yte = data.get_test_set()
+
+    if cat!=-1:
+        model = learner
+        ytr = ytr[:,cat]
+        yte = yte[:, cat]
+    else:
+        model = OneVsRestClassifier(learner, n_jobs=7)
+
+    trained_model = model.fit(Xtr, ytr)
     yte_ = trained_model.predict(Xte)
 
     macro_f1 = macroF1(yte, yte_)
     micro_f1 = microF1(yte, yte_)
-    print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+    #print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+    return macro_f1, micro_f1
+
+def sort_categories_by_prevalence(data):
+    ytr, yte = data.devel.target, data.test.target
+    nC = ytr.shape[1]
+    ytr_prev = [np.sum(ytr[:,i], axis=0) for i in range(nC)]
+    ordered = np.argsort(ytr_prev)
+    data.devel.target = data.devel.target[:,ordered]
+    data.test.target = data.test.target[:, ordered]
 
 data = TextCollectionLoader(dataset='reuters21578')
-data.devel.target = data.devel.target[:,:10]
-data.test.target = data.test.target[:,:10]
+dataorig = TextCollectionLoader(dataset='reuters21578')
 
-print("\nwith bow and linear kernel")
-learner_without_gridsearch(data, LinearSVC())
+sort_categories_by_prevalence(data)
 
 nD = data.num_devel_documents()
 nF = data.num_features()
+nC = data.num_categories()
 nR = nF
 non_zeros = 2 # nF*0.01
 random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False)
@@ -165,11 +178,13 @@ P = random_indexing.projection_matrix
 R = np.dot(P.T,P)
 ri_kernel = lambda X, Y: np.dot(np.dot(X, R), Y.T).toarray()
 
-print("\nwith linear kernel")
-learner_without_gridsearch(data, LinearSVC())
+for c in range(nC):
+    bowf1,_=learner_without_gridsearch(dataorig, LinearSVC(),c)
+    rif1, _ =learner_without_gridsearch(data, LinearSVC(),c)
+    rikf1, _ =learner_without_gridsearch(data, SVC(kernel=ri_kernel),c)
 
-print("\nwith self-covariance kernel")
-learner_without_gridsearch(data, SVC(kernel=ri_kernel))
+    print("Cat %i: Bow=%.3f, RI=%.3f, RIK=%.3f, imprBow_RIK=%.3f, imprRI_RIK=%.3f" %
+          (c, bowf1, rif1, rikf1, rikf1-bowf1, rikf1-rif1))
 
 #
 
