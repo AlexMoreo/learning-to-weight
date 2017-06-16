@@ -8,7 +8,7 @@ from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import urllib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
-
+from sklearn.preprocessing import normalize
 from custom_vectorizers import *
 from data.reuters21578_parser import ReutersParser
 from feature_selection.round_robin import RoundRobin, FeatureSelectorFromRank
@@ -26,7 +26,7 @@ class TextCollectionLoader:
 
     valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
-    unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25']
+    unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
@@ -56,33 +56,11 @@ class TextCollectionLoader:
         self.epoch = 0
         self.offset = 0
 
-    # Ensures the train and validation splits to approximately preserve the original devel prevalence.
-    # In extremely imbalanced cases, the train set is guaranteed to have some positive examples
-    #def divide_train_val_evenly(self, valid_proportion=0.5, pos_cat_code=1):
-    #    pos_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] == pos_cat_code]
-    #    neg_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] != pos_cat_code]
-    #    pos_split_point = int(math.ceil(len(pos_indexes)*(1.0-valid_proportion)))
-    #    neg_split_point = int(math.ceil(len(neg_indexes)*(1.0-valid_proportion)))
-    #    self.train_indexes = np.array(pos_indexes[:pos_split_point] + neg_indexes[:neg_split_point])
-    #    self.valid_indexes = np.array(pos_indexes[pos_split_point:] + neg_indexes[neg_split_point:])
-
-    #def preload_supervised_info(self, dataset):
-    #    pickle_file = os.path.join(self.data_path, '4cell_category_feature.pickle')
-    #    if not os.path.exists(pickle_file):
-    #        print("Calculating the supervised 4cell matrix, and pickling for faster subsequent runs...")
-    #        self.supervised_4cell_matrix = get_supervised_matrix(self.devel_coocurrence, self.devel.target)
-    #        pickle.dump(self.supervised_4cell_matrix, open(pickle_file, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-    #    else:
-    #        print("Loading pickle")
-    #        tini = time.time()
-    #        self.supervised_4cell_matrix = pickle.load(open(pickle_file, 'rb'))
-    #        print("done in %f" % (time.time()-tini))
-
     def get_nonempty_indexes(self, valid_proportion):
-        self.devel_indexes = self._get_doc_indexes(self.devel_vec)
-        self.test_indexes = self._get_doc_indexes(self.test_vec)
-        self.train_indexes, self.valid_indexes, _, _ = \
-            train_test_split(self.devel_indexes, self.devel.target[self.devel_indexes], test_size=valid_proportion, random_state=42)
+        self._devel_indexes = self._get_doc_indexes(self._devel_vec)
+        self.test_indexes = self._get_doc_indexes(self._test_vec)
+        self._train_indexes, self._valid_indexes, _, _ = \
+            train_test_split(self._devel_indexes, self.devel.target[self._devel_indexes], test_size=valid_proportion, random_state=42)
 
     def fetch_dataset(self, dataset):
         self.data_path = os.path.join(get_data_home(), dataset)
@@ -117,7 +95,6 @@ class TextCollectionLoader:
         self.devel.target = mlb.fit_transform(self.devel.target)
         self.test.target = mlb.transform(self.test.target)
 
-
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
         if self.positive_cat is None: return
@@ -133,7 +110,7 @@ class TextCollectionLoader:
 
     def feature_selection(self, feat_sel, score_func=information_gain, features_rank_pickle_path=None):
         if feat_sel==None: return
-        nD,nF = self.devel_coocurrence.shape
+        nD,nF = self._devel_coocurrence.shape
         nC = self.num_categories()
         if isinstance(feat_sel, float):
             if feat_sel <=0.0 or feat_sel>1.0: raise ValueError("Feature selection ratio should be contained in (0,1]")
@@ -151,76 +128,71 @@ class TextCollectionLoader:
         if os.path.exists(features_rank_pickle_path):
             features_rank = pickle.load(open(features_rank_pickle_path, 'rb'))
             fs = FeatureSelectorFromRank(k=feat_sel, features_rank=features_rank)
-            self.devel_coocurrence = fs.fit_transform(self.devel_coocurrence, self.devel.target)
-            self.test_coocurrence = fs.transform(self.test_coocurrence)
-            if hasattr(self, 'devel_vec'): self.devel_vec = fs.transform(self.devel_vec)
-            if hasattr(self, 'test_vec'): self.test_vec = fs.transform(self.test_vec)
+            self._devel_coocurrence = fs.fit_transform(self._devel_coocurrence, self.devel.target)
+            self._test_coocurrence = fs.transform(self._test_coocurrence)
+            if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
+            if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
             self.supervised_4cell_matrix = None
         else:
             fs = RoundRobin(score_func=score_func, k=feat_sel)
-            self.devel_coocurrence = fs.fit_transform(self.devel_coocurrence, self.devel.target)
-            self.test_coocurrence = fs.transform(self.test_coocurrence)
-            if hasattr(self, 'devel_vec'): self.devel_vec = fs.transform(self.devel_vec)
-            if hasattr(self, 'test_vec'): self.test_vec = fs.transform(self.test_vec)
+            self._devel_coocurrence = fs.fit_transform(self._devel_coocurrence, self.devel.target)
+            self._test_coocurrence = fs.transform(self._test_coocurrence)
+            if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
+            if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
             self.supervised_4cell_matrix = fs.supervised_4cell_matrix
             print("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
             pickle.dump(fs._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-
     def get_4cell_matrix(self):
         if self.supervised_4cell_matrix is None:
-            self.supervised_4cell_matrix = get_supervised_matrix(self.devel_coocurrence, self.devel.target)
+            self.supervised_4cell_matrix = get_supervised_matrix(self._devel_coocurrence, self.devel.target)
         return self.supervised_4cell_matrix
 
     def __prevalence(self, inset):
         return sum(inset)*1.0 / len(inset)
 
     def devel_class_prevalence(self, cat_label):
-        return self.__prevalence(self.devel.target[self.devel_indexes, cat_label])
+        return self.__prevalence(self.devel.target[self._devel_indexes, cat_label])
 
     def train_class_prevalence(self, cat_label):
-        return self.__prevalence(self.devel.target[self.train_indexes, cat_label])
+        return self.__prevalence(self.devel.target[self._train_indexes, cat_label])
 
     def valid_class_prevalence(self, cat_label):
-        return self.__prevalence(self.devel.target[self.valid_indexes, cat_label])
+        return self.__prevalence(self.devel.target[self._valid_indexes, cat_label])
 
     def test_class_prevalence(self, cat_label):
         return self.__prevalence(self.test.target[self.test_indexes, cat_label])
 
     def term_weighting(self):
         tini = time.time()
-        #if the vectorizer was set to tf or binary, then there is nothing else to do here
-        if self.vectorizer_name == 'binary' or (self.vectorizer_name=='tf' and self.sublinear_tf==False):
-            self.devel_vec = self.devel_coocurrence
-            self.test_vec = self.test_coocurrence
+        method = self.vectorizer_name
+        #if the vectorizer was set to tf or binary, then there is nothing else to do here (the co-occurrence matrix is
+        #already binary, or tf-counters -- see function get_coocurrence_matrix)
+        if (method in ['binary','l1']) or \
+                (method == 'tf' and self.sublinear_tf == False):
+            self._devel_vec = self._devel_coocurrence
+            self._test_vec = self._test_coocurrence
+            if method == 'l1':
+                if self.sublinear_tf: raise ValueError('L1 term weight request with sublinear tf, this should be a mistake...')
+                self._devel_vec = normalize(self._devel_vec, norm='l1', axis=1, copy=False)
+                self._test_vec = normalize(self._test_vec, norm='l1', axis=1, copy=False)
         else:
-            if self.vectorizer_name in ['tfidf', 'tf']:
+            if method in ['tfidf', 'tf']:
                 idf = 'idf' in self.vectorizer_name
                 vectorizer = TfidfTransformer(norm=u'l2', use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
-            elif self.vectorizer_name == 'bm25':
+            elif method == 'bm25':
                 err_exception(self.sublinear_tf, "BM25 can not be combined with sublinear_tf")
                 vectorizer = BM25Transformer()
-            elif self.vectorizer_name in self.supervised_tw_methods:
-                if self.vectorizer_name == 'tfig':
-                    tsr_function = information_gain
-                elif self.vectorizer_name == 'tfchi2':
-                    tsr_function = chi_square
-                elif self.vectorizer_name == 'tfgr':
-                    tsr_function = gain_ratio
-                elif self.vectorizer_name == 'tfrf':
-                    tsr_function = relevance_frequency
-                elif self.vectorizer_name == 'tfcw':
-                    tsr_function = conf_weight
-                elif self.vectorizer_name == 'tffs':
-                    tsr_function = fisher_score_binary
-                vectorizer = TSRweighting(tsr_function, global_policy=self.global_policy,
+            elif method in self.supervised_tw_methods:
+                tsr_map = {'tfig':information_gain, 'tfchi2':chi_square, 'tfgr':gain_ratio, 'tfrf':relevance_frequency, 'tfcw':conf_weight, 'tffs':fisher_score_binary}
+                vectorizer = TSRweighting(tsr_map[method], global_policy=self.global_policy,
                                           supervised_4cell_matrix=self.supervised_4cell_matrix,
                                           sublinear_tf=self.sublinear_tf)
                 self.vectorizer_name += ('_'+self.global_policy)
-            self.devel_vec = vectorizer.fit_transform(self.devel_coocurrence, self.devel.target)
-            self.test_vec = vectorizer.transform(self.test_coocurrence)
+            self._devel_vec = vectorizer.fit_transform(self._devel_coocurrence, self.devel.target)
+            self._test_vec = vectorizer.transform(self._test_coocurrence)
 
-        self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+self.vectorizer_name
+        self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+method
 
         print("Term weighting: %s, took %ds" % (self.vectorizer_name, time.time() - tini))
 
@@ -228,8 +200,8 @@ class TextCollectionLoader:
         min_df = 1 if self.name == 'reuters21578' else 3
         binary=self.vectorizer_name=='binary'
         count_vec = CountVectorizer(stop_words='english', binary=binary, min_df=min_df)
-        self.devel_coocurrence = count_vec.fit_transform(self.devel.data)
-        self.test_coocurrence  = count_vec.transform(self.test.data)
+        self._devel_coocurrence = count_vec.fit_transform(self.devel.data)
+        self._test_coocurrence  = count_vec.transform(self.test.data)
 
     #virtually removes invalid documents (documents without any non-zero feature)
     def _get_doc_indexes(self, vector_set):
@@ -238,30 +210,30 @@ class TextCollectionLoader:
 
     def set_representation_mode(self, rep_mode):
         if rep_mode == 'dense':
-            self.devel_vec = self.devel_vec.toarray()
-            self.test_vec = self.test_vec.toarray()
+            self._devel_vec = self._devel_vec.toarray()
+            self._test_vec = self._test_vec.toarray()
         elif rep_mode == 'sparse':
             # sorting the indexes simplifies the creation of sparse tensors a lot
-            self.devel_vec.sort_indices()
-            self.test_vec.sort_indices()
+            self._devel_vec.sort_indices()
+            self._test_vec.sort_indices()
 
     def get_devel_set(self):
-        return self.devel_vec[self.devel_indexes], self.devel.target[self.devel_indexes]
+        return self._devel_vec[self._devel_indexes], self.devel.target[self._devel_indexes]
 
     def get_train_set(self):
-        return self.devel_vec[self.train_indexes], self.devel.target[self.train_indexes]
+        return self._devel_vec[self._train_indexes], self.devel.target[self._train_indexes]
 
     def get_validation_set(self):
-        return self.devel_vec[self.valid_indexes], self.devel.target[self.valid_indexes]
+        return self._devel_vec[self._valid_indexes], self.devel.target[self._valid_indexes]
 
     def get_test_set(self):
-        return self.test_vec[self.test_indexes], self.test.target[self.test_indexes]
+        return self._test_vec[self.test_indexes], self.test.target[self.test_indexes]
 
     def train_batch(self, batch_size=64):
-        if self.offset == 0: random.shuffle(self.train_indexes)
+        if self.offset == 0: random.shuffle(self._train_indexes)
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
-        batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]
-        labels = self.devel.target[self.train_indexes[self.offset:to_pos]]
+        batch = self._devel_vec[self._train_indexes[self.offset:to_pos]]
+        labels = self.devel.target[self._train_indexes[self.offset:to_pos]]
         self.offset += batch_size
         if self.offset >= self.num_tr_documents():
             self.offset = 0
@@ -269,19 +241,19 @@ class TextCollectionLoader:
         return batch, labels
 
     def num_devel_documents(self):
-        return len(self.devel_indexes)
+        return len(self._devel_indexes)
 
     def num_categories(self):
         return self.devel.target.shape[1]
 
     def num_features(self):
-        return self.devel_vec.shape[1]
+        return self._devel_vec.shape[1]
 
     def num_tr_documents(self):
-        return len(self.train_indexes)
+        return len(self._train_indexes)
 
     def num_val_documents(self):
-        return len(self.valid_indexes)
+        return len(self._valid_indexes)
 
     def num_test_documents(self):
         return len(self.test_indexes)

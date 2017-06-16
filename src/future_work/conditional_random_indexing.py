@@ -138,13 +138,13 @@ random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, posi
 
 if False:
     print "Gaussian random projection"
-    print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+    print random_indexing.count_nonzeros(data._devel_vec), random_indexing.density(data._devel_vec)
     #transformer = random_projection.SparseRandomProjection(n_components=nR, density=2.0/nR)
     transformer = random_projection.SparseRandomProjection(n_components=nR)
-    data.devel_vec = transformer.fit_transform(data.devel_vec)
-    data.test_vec = transformer.transform(data.test_vec)
-    print data.devel_vec.shape
-    print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+    data._devel_vec = transformer.fit_transform(data._devel_vec)
+    data._test_vec = transformer.transform(data._test_vec)
+    print data._devel_vec.shape
+    print random_indexing.count_nonzeros(data._devel_vec), random_indexing.density(data._devel_vec)
     print "classify"
     linear_svm_without_gridsearch(data)
     sys.exit()
@@ -152,10 +152,10 @@ if False:
     #0.556 macro-f1, 0.849 micro-f1
 
 print "random indexing"
-print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
-data.devel_vec = random_indexing.fit_transform(data.devel_vec)
-data.test_vec   = random_indexing.transform(data.test_vec)
-print random_indexing.count_nonzeros(data.devel_vec), random_indexing.density(data.devel_vec)
+print random_indexing.count_nonzeros(data._devel_vec), random_indexing.density(data._devel_vec)
+data._devel_vec = random_indexing.fit_transform(data._devel_vec)
+data._test_vec   = random_indexing.transform(data._test_vec)
+print random_indexing.count_nonzeros(data._devel_vec), random_indexing.density(data._devel_vec)
 
 #print "classification / test"
 linear_svm_without_gridsearch(data)
