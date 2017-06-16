@@ -24,7 +24,7 @@ class Dataset:
 
 class TextCollectionLoader:
 
-    valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
+    valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed']#, 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
     unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
@@ -33,7 +33,7 @@ class TextCollectionLoader:
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
-                 sublinear_tf=False, global_policy="max", tsr_function=information_gain):
+                 sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False):
         err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
@@ -44,6 +44,7 @@ class TextCollectionLoader:
         self.positive_cat = positive_cat
         self.sublinear_tf=sublinear_tf
         self.global_policy=global_policy
+        self.verbose = verbose
 
         self.fetch_dataset(dataset)
         self.get_coocurrence_matrix()
@@ -100,7 +101,7 @@ class TextCollectionLoader:
         if self.positive_cat is None: return
         cat_name=self.devel.target_names[self.positive_cat]
         nC = len(self.valid_catcodes[self.name])
-        print("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat,nC))
+        self.sout("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat,nC))
         self.devel.target = self.devel.target[:, self.positive_cat:self.positive_cat+1]
         self.test.target = self.test.target[:, self.positive_cat:self.positive_cat+1]
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
@@ -118,7 +119,7 @@ class TextCollectionLoader:
         if feat_sel >= nF:
             print "Warning: number of features to select is greater than the actual number of features (ommitted)."
             return
-        print('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
+        self.sout('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
         #fs = SelectKBest(chi2, k=feat_sel)
         #check if the ranking of features for this setting has already been calculated
         if features_rank_pickle_path is None:
@@ -140,7 +141,7 @@ class TextCollectionLoader:
             if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
             if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
             self.supervised_4cell_matrix = fs.supervised_4cell_matrix
-            print("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
+            self.sout("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
             pickle.dump(fs._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     def get_4cell_matrix(self):
@@ -194,7 +195,7 @@ class TextCollectionLoader:
 
         self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+method
 
-        print("Term weighting: %s, took %ds" % (self.vectorizer_name, time.time() - tini))
+        self.sout("Term weighting: %s, took <%ds" % (self.vectorizer_name, (time.time() - tini)+1))
 
     def get_coocurrence_matrix(self):
         min_df = 1 if self.name == 'reuters21578' else 3
@@ -239,6 +240,10 @@ class TextCollectionLoader:
             self.offset = 0
             self.epoch += 1
         return batch, labels
+
+    def sout(self,msg):
+        if self.verbose:
+            print(msg)
 
     def num_devel_documents(self):
         return len(self._devel_indexes)
@@ -295,7 +300,7 @@ class TextCollectionLoader:
 
             pickle_tr = pickle_documents(parser.tr_docs, "train")
             pickle_te = pickle_documents(parser.te_docs, "test")
-            print('Empty docs %d' % parser.empty_docs)
+            self.sout('Empty docs %d' % parser.empty_docs)
             requested_subset = pickle_tr if subset == 'train' else pickle_te
         else:
             requested_subset = pickle.load(open(reuters_pickle_path, 'rb'))
