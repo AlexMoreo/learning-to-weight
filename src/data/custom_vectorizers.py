@@ -6,7 +6,7 @@ import sklearn
 import math
 from joblib import Parallel, delayed
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from tsr_function import *
+from feature_selection.tsr_function import *
 
 
 class BM25:
