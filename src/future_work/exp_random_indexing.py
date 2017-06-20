@@ -142,8 +142,8 @@ with open('Kernel_RI_results.txt', 'w') as fo:
     compute_distances=False
     compute_classification=True
     bow_computed = True #False
-    for non_zeros in [5, 10]:#[2, 5, 10]:
-        for dataset in TextCollectionLoader.valid_datasets:
+    for non_zeros in [10]:#[2, 5, 10]:
+        for dataset in ['reuters21578','20newsgroups']:#TextCollectionLoader.valid_datasets:
             data = TextCollectionLoader(dataset=dataset)
             nF = data.num_features()
 
@@ -153,7 +153,7 @@ with open('Kernel_RI_results.txt', 'w') as fo:
                 experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', dataset, nF, fo)
 
             for run in range(5):
-                for nR in [5000, 10000, nF]:#, nF/2, nF, int(nF*1.25)]:
+                for nR in [5000, 10000]:#, nF/2, nF, int(nF*1.25)]:
                     print('Running {} nR={} non-zero={}...'.format(dataset,nR,non_zeros))
                     data = TextCollectionLoader(dataset=dataset)
                     X_train, y_train = data.get_devel_set()
