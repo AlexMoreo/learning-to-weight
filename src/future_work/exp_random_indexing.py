@@ -8,6 +8,8 @@ from future_work.random_indexing import RandomIndexing
 from sklearn.metrics import pairwise_distances
 from scipy.sparse import csr_matrix
 import time
+from numpy.linalg import cholesky
+from scipy.sparse import csr_matrix, csc_matrix
 
 
 def fit_model_hyperparameters(data, parameters, model):
@@ -131,44 +133,77 @@ def plot_distances(X_train, XP_train, nR):
     plt.show()
 
 
-def experiment(Xtr,ytr,Xte,yte,learner,method,dataset,nF,fo,run=0):
+def experiment(Xtr,ytr,Xte,yte,learner,method,k,dataset,nF,fo,run=0, addtime_tr=0, addtime_te=0):
     macro_f1, micro_f1, t_train, t_test = learner_without_gridsearch(Xtr,ytr,Xte,yte, learner)
-    fo.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method, dataset, nF, run, t_train, t_test, macro_f1, micro_f1))
+    print("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method,k, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1))
+    fo.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method,k, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1))
     fo.flush()
 
 with open('Kernel_RI_results.txt', 'w') as fo:
-    fo.write("Method\tdataset\tnF\trun\ttrainTime\ttestTime\tMacroF1\tmicroF1\n")
+    fo.write("Method\tk\tdataset\tnF\trun\ttrainTime\ttestTime\tMacroF1\tmicroF1\n")
 
     compute_distances=False
     compute_classification=True
-    bow_computed = True #False
-    for non_zeros in [10]:#[2, 5, 10]:
-        for dataset in ['reuters21578','20newsgroups']:#TextCollectionLoader.valid_datasets:
+    bow_computed = False
+    errors=0
+    for dataset in ['ohsumed20k']:#TextCollectionLoader.valid_datasets:
+        for non_zeros in [-1]:  # [2, 5, 10]:
             data = TextCollectionLoader(dataset=dataset)
             nF = data.num_features()
+            if non_zeros == -1:
+                non_zeros = nF/100
 
             if not bow_computed:
                 X_train, y_train = data.get_devel_set()
                 X_test,  y_test = data.get_test_set()
-                experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', dataset, nF, fo)
+                experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', 1, dataset, nF, fo)
 
-            for run in range(5):
-                for nR in [5000, 10000]:#, nF/2, nF, int(nF*1.25)]:
+            for run in range(2,5):
+                for nR in [2500,5000,6000,7000,8000,9000,10000,15000]:
+                    if nR > nF: continue
                     print('Running {} nR={} non-zero={}...'.format(dataset,nR,non_zeros))
                     data = TextCollectionLoader(dataset=dataset)
                     X_train, y_train = data.get_devel_set()
                     X_test, y_test = data.get_test_set()
 
-                    print("projection")
-                    random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
-                    XP_train = random_indexing.fit_transform(X_train)
-                    XP_test  = random_indexing.transform(X_test)
+                    print("random projection...")
+                    spd = False
+                    patience = 10
+                    while not spd and patience > 0:
+                        random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
+                        random_indexing.fit(X_train)
+                        ri_kernel, R = svc_ri_kernel(random_indexing)
+                        print('Cholesky')
+                        try:
+                            t_ini = time.time()
+                            L = csc_matrix(cholesky(R.toarray()))
+                            t_cholesky_tr = time.time()-t_ini
+                            print('done')
+                            spd = True
+                        except np.linalg.linalg.LinAlgError:
+                            print('error: matrix is not semidefinite positive!!!')
+                            errors += 1
+                            patience -= 1
 
-                    ri_kernel, R = svc_ri_kernel(random_indexing)
+                    XP_train = random_indexing.transform(X_train)
+                    XP_test  = random_indexing.transform(X_test)
+                    
                     if compute_distances:
                         plot_distances(X_train, XP_train, nR)
                     if compute_classification:
-                        experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI(%d)' % non_zeros, dataset, nR, fo, run=run)
-                        experiment(XP_train, y_train, XP_test, y_test, ri_kernel, 'KernelRI(%d)' % non_zeros, dataset, nR, fo, run=run)
+                        experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, fo, run=run)
+
+                        if spd:
+                            t_ini = time.time()
+                            XPL_train = XP_train.dot(L)
+                            t_cholesky_tr += (time.time() - t_ini)
+                            t_ini = time.time()
+                            XPL_test = XP_test.dot(L)
+                            t_cholesky_te = (time.time() - t_ini)
+                            print("[done]")
+                            experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'KRIch', non_zeros, dataset, nR, fo, run=run, addtime_tr = t_cholesky_tr, addtime_te=t_cholesky_te)
+                        #else:
+                        #    experiment(XP_train, y_train, XP_test, y_test, ri_kernel, 'KRI', non_zeros, dataset, nR, fo, run=run)
+                        print('end training')
         bow_computed = True
-        print('Done!')
+        print('Done! (with {} errors)'.format(errors))

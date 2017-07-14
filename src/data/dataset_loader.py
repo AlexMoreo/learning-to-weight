@@ -24,7 +24,7 @@ class Dataset:
 
 class TextCollectionLoader:
 
-    valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed']#, 'movie_reviews', 'sentence_polarity', 'imdb']
+    valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed', 'ohsumed20k']#, 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
     unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
@@ -78,6 +78,10 @@ class TextCollectionLoader:
         elif dataset == 'ohsumed':
             self.devel = self.fetch_ohsumed50k(subset='train', data_path=self.data_path)
             self.test = self.fetch_ohsumed50k(subset='test', data_path=self.data_path)
+            self.classification = 'multi-label'
+        elif dataset == 'ohsumed20k':
+            self.devel = self.fetch_ohsumed20k(subset='train', data_path=self.data_path)
+            self.test = self.fetch_ohsumed20k(subset='test', data_path=self.data_path)
             self.classification = 'multi-label'
         # check if the multilabelbinarizer transforms well the binary targets
         #elif dataset == 'movie_reviews':
