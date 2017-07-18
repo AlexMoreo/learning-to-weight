@@ -158,7 +158,7 @@ with open(out_file, 'w') as fo:
 
                     if dri_enabled:
                         t_ini = time.time()
-                        Ld = np.diag(np.sqrt(extract_diagonal(R)))
+                        Ld = csc_matrix(np.diag(np.sqrt(np.diag(R.toarray()))))
                         XPL_train = XP_train.dot(Ld)
                         tr_time = time.time() - t_ini
                         XPL_test = XP_test.dot(Ld)
