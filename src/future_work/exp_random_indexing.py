@@ -71,8 +71,7 @@ def euclidean_distance(v,w):
     else:
         return np.sqrt(np.dot(dif, dif.T))
 
-def get_cov_matrix(random_indexer):
-    P = random_indexer.projection_matrix
+def get_cov_matrix(P):
     R = np.absolute(P.transpose().dot(P))
     R.eliminate_zeros()
     return R
@@ -98,7 +97,7 @@ def experiment(Xtr,ytr,Xte,yte,learner,method,k,dataset,nF,fo,run=0, addtime_tr=
     fo.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method,k, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1))
     fo.flush()
 
-out_file = "checking_diagonal.txt"
+out_file = "checking_bow_F.txt"
 with open(out_file, 'w') as fo:
     fo.write("Method\tk\tdataset\tnF\trun\ttrainTime\ttestTime\tMacroF1\tmicroF1\n")
 
@@ -106,12 +105,14 @@ with open(out_file, 'w') as fo:
 
     errors=0
     bow_enabled = True
-    ri_enabled = True
+    ri_enabled = False
     kri_enabled = False
-    krich_enabled = True
-    dri_enabled = True
+    krich_enabled = False
+    dri_enabled = False
 
     for dataset in ['reuters21578','20newsgroups','ohsumed20k']:
+        bow_r_enabled = True
+
         for non_zeros in [2,-1]:
             data = TextCollectionLoader(dataset=dataset)
             nF = data.num_features()
@@ -135,16 +136,35 @@ with open(out_file, 'w') as fo:
                     random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
                     random_indexing.fit(X_train)
                     t_ini = time.time()
-                    R = get_cov_matrix(random_indexing)
+                    R = get_cov_matrix(random_indexer.projection_matrix)
                     r_time = time.time() - t_ini
                     XP_train = random_indexing.transform(X_train)
                     XP_test = random_indexing.transform(X_test)
+
+                    if bow_r_enabled:
+                        t_ini = time.time()
+                        F = get_cov_matrix(X_train)
+                        Fd = get_cholesky(R)
+                        XF_train = X_train.dot(Fd)
+                        ftr_time = time.time() - t_ini
+                        t_ini = time.time()
+                        XF_test  = X_test.dot(Fd)
+                        fte_time = time.time() - t_ini
+
+                        experiment(XF_train, y_train, XF_test, y_test, LinearSVC(), 'BowFch', non_zeros, dataset, nR, fo, run=run, addtime_tr=ftr_time, addtime_te=fte_time)
+
+                        Fd = csc_matrix(np.diag(np.sqrt(np.diag(F.toarray()))))
+                        XFD_train = X_train.dot(Fd)
+                        XFD_test = X_test.dot(Fd)
+                        experiment(XFD_train, y_train, XFD_test, y_test, LinearSVC(), 'DBowF', non_zeros, dataset, nR, fo, run=run, addtime_tr=0, addtime_te=0)
+
+                        bow_r_enabled = False
 
                     if ri_enabled:
                         experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, fo, run=run)
 
                     if kri_enabled:
-                        experiment(XP_train, y_train, XP_test, y_test, svc_ri_kernel(R), 'KRI', non_zeros, dataset, nR, fo, run=run, tr_time=r_time)
+                        experiment(XP_train, y_train, XP_test, y_test, svc_ri_kernel(R), 'KRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=r_time)
 
                     if krich_enabled:
                         t_ini = time.time()
