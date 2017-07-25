@@ -104,7 +104,7 @@ with open(out_file, 'w') as fo:
     compute_distances=False
 
     errors=0
-    bow_enabled = True
+    #bow_enabled = True
     ri_enabled = False
     kri_enabled = False
     krich_enabled = False
@@ -112,7 +112,7 @@ with open(out_file, 'w') as fo:
 
     for dataset in ['reuters21578','20newsgroups','ohsumed20k']:
         bow_r_enabled = True
-
+        bow_enabled = True
         for non_zeros in [2,-1]:
             data = TextCollectionLoader(dataset=dataset)
             nF = data.num_features()
@@ -124,70 +124,70 @@ with open(out_file, 'w') as fo:
                 X_test,  y_test = data.get_test_set()
                 experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', 1, dataset, nF, fo)
 
-            for run in range(10):
-                for nR in [2500,5000,6000,7000,8000,9000,10000,15000]:
-                    if nR > nF: continue
-                    print('Running {} nR={} non-zero={}...'.format(dataset,nR,non_zeros))
-                    data = TextCollectionLoader(dataset=dataset)
-                    X_train, y_train = data.get_devel_set()
-                    X_test, y_test = data.get_test_set()
-
-                    print("random projection...")
-                    random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
-                    random_indexing.fit(X_train)
+                if bow_r_enabled:
                     t_ini = time.time()
-                    R = get_cov_matrix(random_indexer.projection_matrix)
-                    r_time = time.time() - t_ini
-                    XP_train = random_indexing.transform(X_train)
-                    XP_test = random_indexing.transform(X_test)
+                    F = get_cov_matrix(X_train)
+                    # Fd = get_cholesky(F)
+                    # if Fd is not None:
+                    #     XF_train = X_train.dot(Fd)
+                    #     ftr_time = time.time() - t_ini
+                    #     t_ini = time.time()
+                    #     XF_test = X_test.dot(Fd)
+                    #     fte_time = time.time() - t_ini
+                    #     experiment(XF_train, y_train, XF_test, y_test, LinearSVC(), 'BowFch', 1, dataset, nF, fo, run=1, addtime_tr=ftr_time, addtime_te=fte_time)
 
-                    if bow_r_enabled:
-                        t_ini = time.time()
-                        F = get_cov_matrix(X_train)
-                        Fd = get_cholesky(R)
-                        XF_train = X_train.dot(Fd)
-                        ftr_time = time.time() - t_ini
-                        t_ini = time.time()
-                        XF_test  = X_test.dot(Fd)
-                        fte_time = time.time() - t_ini
+                    Fd = csc_matrix(np.diag(np.sqrt(np.diag(F.toarray()))))
+                    XFD_train = X_train.dot(Fd)
+                    XFD_test = X_test.dot(Fd)
+                    experiment(XFD_train, y_train, XFD_test, y_test, LinearSVC(), 'DBowF', 1, dataset, nF, fo, run=1, addtime_tr=0, addtime_te=0)
 
-                        experiment(XF_train, y_train, XF_test, y_test, LinearSVC(), 'BowFch', non_zeros, dataset, nR, fo, run=run, addtime_tr=ftr_time, addtime_te=fte_time)
 
-                        Fd = csc_matrix(np.diag(np.sqrt(np.diag(F.toarray()))))
-                        XFD_train = X_train.dot(Fd)
-                        XFD_test = X_test.dot(Fd)
-                        experiment(XFD_train, y_train, XFD_test, y_test, LinearSVC(), 'DBowF', non_zeros, dataset, nR, fo, run=run, addtime_tr=0, addtime_te=0)
 
-                        bow_r_enabled = False
+            # for run in range(10):
+            #     for nR in [2500,5000,6000,7000,8000,9000,10000,15000]:
+            #         if nR > nF: continue
+            #         data = TextCollectionLoader(dataset=dataset)
+            #         X_train, y_train = data.get_devel_set()
+            #         X_test, y_test = data.get_test_set()
+            #
+            #         if any([ri_enabled, kri_enabled, krich_enabled, dri_enabled]):
+            #             random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
+            #             random_indexing.fit(X_train)
+            #             t_ini = time.time()
+            #             R = get_cov_matrix(random_indexing.projection_matrix)
+            #             r_time = time.time() - t_ini
+            #             XP_train = random_indexing.transform(X_train)
+            #             XP_test = random_indexing.transform(X_test)
+            #
+            #         if ri_enabled:
+            #             experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, fo, run=run)
+            #
+            #         if kri_enabled:
+            #             experiment(XP_train, y_train, XP_test, y_test, svc_ri_kernel(R), 'KRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=r_time)
+            #
+            #         if krich_enabled:
+            #             t_ini = time.time()
+            #             Ld = get_cholesky(R)
+            #             if Ld is None: break
+            #             XPL_train = XP_train.dot(Ld)
+            #             tr_time = time.time()-t_ini
+            #             XPL_test = XP_test.dot(Ld)
+            #             te_time = time.time()-t_ini-tr_time
+            #             experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'KRIch', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_time, addtime_te=te_time)
+            #
+            #         if dri_enabled:
+            #             t_ini = time.time()
+            #             Ld = csc_matrix(np.diag(np.sqrt(np.diag(R.toarray()))))
+            #             XPL_train = XP_train.dot(Ld)
+            #             tr_time = time.time() - t_ini
+            #             XPL_test = XP_test.dot(Ld)
+            #             te_time = time.time() - t_ini - tr_time
+            #             r_diag_time = math.sqrt(r_time*1.0)
+            #             experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'DRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_diag_time, addtime_te=te_time)
+            #
+            #         if compute_distances:
+            #             plot_distances(X_train, XP_train, nR)
 
-                    if ri_enabled:
-                        experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, fo, run=run)
-
-                    if kri_enabled:
-                        experiment(XP_train, y_train, XP_test, y_test, svc_ri_kernel(R), 'KRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=r_time)
-
-                    if krich_enabled:
-                        t_ini = time.time()
-                        Ld = get_cholesky(R)
-                        if Ld is None: break
-                        XPL_train = XP_train.dot(Ld)
-                        tr_time = time.time()-t_ini
-                        XPL_test = XP_test.dot(Ld)
-                        te_time = time.time()-t_ini-tr_time
-                        experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'KRIch', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_time, addtime_te=te_time)
-
-                    if dri_enabled:
-                        t_ini = time.time()
-                        Ld = csc_matrix(np.diag(np.sqrt(np.diag(R.toarray()))))
-                        XPL_train = XP_train.dot(Ld)
-                        tr_time = time.time() - t_ini
-                        XPL_test = XP_test.dot(Ld)
-                        te_time = time.time() - t_ini - tr_time
-                        r_diag_time = math.sqrt(r_time*1.0)
-                        experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'DRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_diag_time, addtime_te=te_time)
-
-                    if compute_distances:
-                        plot_distances(X_train, XP_train, nR)
-
-        bow_enabled = False
+            bow_enabled = False
+            bow_r_enabled = False
         print('Done! (with {} errors)'.format(errors))
