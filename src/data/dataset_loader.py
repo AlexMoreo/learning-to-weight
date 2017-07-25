@@ -30,7 +30,7 @@ class TextCollectionLoader:
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
-    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
+    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'ohsumed20k':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
                  sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False):
@@ -202,7 +202,7 @@ class TextCollectionLoader:
         self.sout("Term weighting: %s, took <%ds" % (self.vectorizer_name, (time.time() - tini)+1))
 
     def get_coocurrence_matrix(self):
-        min_df = 1 if self.name == 'reuters21578' else 3
+        min_df = 1 if self.name == 'reuters21578' else 3 #since reuters contains categories with less than 3 documents
         binary=self.vectorizer_name=='binary'
         count_vec = CountVectorizer(stop_words='english', binary=binary, min_df=min_df)
         self._devel_coocurrence = count_vec.fit_transform(self.devel.data)

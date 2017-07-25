@@ -7,9 +7,14 @@ from data.dataset_loader import TextCollectionLoader
 from future_work.random_indexing import RandomIndexing
 from sklearn.metrics import pairwise_distances
 from scipy.sparse import csr_matrix
-import time, math
+import time, math, os, sys
 from numpy.linalg import cholesky
 from scipy.sparse import csr_matrix, csc_matrix
+import pandas as pd
+import cPickle as pickle
+from helpers import create_if_not_exists
+from sklearn.preprocessing import normalize
+import scipy
 
 def plot_distances(X_train, XP_train, nR):
     print("pair-wise distances in original space")
@@ -76,6 +81,14 @@ def get_cov_matrix(P):
     R.eliminate_zeros()
     return R
 
+def get_diagonal(P, square_root=False):
+    #the diagonal of the R matrix is the L2-norm of each column vector in P
+    diag = scipy.sparse.linalg.norm(P, axis=0)
+    if square_root:
+        diag = np.sqrt(diag)
+    diag_idx = range(P.shape[1])
+    return csc_matrix((diag,(diag_idx,diag_idx)))
+
 def get_cholesky(R):
     try:
         L = csc_matrix(cholesky(R.toarray()))
@@ -91,103 +104,191 @@ def svc_ri_kernel(R):
 def extract_diagonal(R):
     return csc_matrix(np.diag(np.diag(R.toarray())))
 
-def experiment(Xtr,ytr,Xte,yte,learner,method,k,dataset,nF,fo,run=0, addtime_tr=0, addtime_te=0):
+# if the experiment has not yet been run, then runs it
+def experiment(Xtr, ytr, Xte, yte, learner, method, k, dataset, nF, df, run=0, addtime_tr=0, addtime_te=0):
+    learner_name = type(learner).__name__
+    if df.already_calculated(method, k, learner_name, dataset, nF, run): return
+    if isinstance(Xtr, csr_matrix):
+        Xtr.sort_indices()
+    if isinstance(Xte, csr_matrix):
+        Xte.sort_indices()
     macro_f1, micro_f1, t_train, t_test = learner_without_gridsearch(Xtr,ytr,Xte,yte, learner)
-    print("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method,k, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1))
-    fo.write("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(method,k, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1))
-    fo.flush()
+    df.add_row(method, k, learner_name, dataset, nF, run, t_train+addtime_tr, t_test+addtime_te, macro_f1, micro_f1)
 
-out_file = "checking_bow_F.txt"
-with open(out_file, 'w') as fo:
-    fo.write("Method\tk\tdataset\tnF\trun\ttrainTime\ttestTime\tMacroF1\tmicroF1\n")
 
-    compute_distances=False
+def experiment_kernel_linsvc(P, X_train, y_train, X_test, y_test, method, k, dataset, nF, df, run=0, addtime_tr=0, addtime_te=0):
+    if df.already_calculated(method, k, 'LinearSVC', dataset, nF, run): return
 
-    errors=0
-    #bow_enabled = True
-    ri_enabled = False
-    kri_enabled = False
-    krich_enabled = False
-    dri_enabled = False
+    t_ini = time.time()
+    R = get_cov_matrix(P)
+    L = get_cholesky(R)
+    if L is not None:
+        XL_train = X_train.dot(L)
+        addtime_tr += (time.time() - t_ini)
 
-    for dataset in ['reuters21578','20newsgroups','ohsumed20k']:
-        bow_r_enabled = True
-        bow_enabled = True
-        for non_zeros in [2,-1]:
-            data = TextCollectionLoader(dataset=dataset)
-            nF = data.num_features()
+        t_ini = time.time()
+        XL_test = X_test.dot(L)
+        addtime_te += (time.time() - t_ini)
+
+        experiment(XL_train, y_train, XL_test, y_test, LinearSVC(), method, k, dataset, nF, results, run=run, addtime_tr=addtime_tr, addtime_te=addtime_te)
+    else:
+        df.add_row(method, k, 'LinearSVC', dataset, nF, run, np.NaN, np.NaN, np.NaN, np.NaN)
+
+def experiment_kernel_svc(P, X_train, y_train, X_test, y_test, method, k, dataset, nF, df, run=0, addtime_tr=0, addtime_te=0):
+    if df.already_calculated(method, k, 'SVC', dataset, nF, run): return
+
+    t_ini = time.time()
+    R = get_cov_matrix(P)
+    addtime_tr += (time.time() - t_ini)
+    experiment(X_train, y_train, X_test, y_test, svc_ri_kernel(R), method, k, dataset, nF, results, run=run, addtime_tr=addtime_tr, addtime_te=addtime_te)
+
+
+def experiment_diag_linsvc(P, X_train, y_train, X_test, y_test, method, k, dataset, nF, df, run=0, addtime_tr=0, addtime_te=0):
+    if df.already_calculated(method, k, 'LinearSVC', dataset, nF, run): return
+
+    t_ini = time.time()
+    D = get_diagonal(P, square_root=True)
+    XD_train = X_train.dot(D)
+    addtime_tr += (time.time() - t_ini)
+
+    t_ini = time.time()
+    XD_test = X_test.dot(D)
+    addtime_te += (time.time() - t_ini)
+
+    experiment(XD_train, y_train, XD_test, y_test, LinearSVC(), method, k, dataset, nF, results, run=run, addtime_tr=addtime_tr, addtime_te=addtime_te)
+
+def experiment_diag_svc(P, X_train, y_train, X_test, y_test, method, k, dataset, nF, df, run=0, addtime_tr=0, addtime_te=0):
+    if df.already_calculated(method, k, 'SVC', dataset, nF, run): return
+
+    t_ini = time.time()
+    D = get_diagonal(P, square_root=False)
+    addtime_tr += (time.time() - t_ini)
+
+    experiment(X_train, y_train, X_test, y_test, svc_ri_kernel(D), method, k, dataset, nF, results, run=run, addtime_tr=addtime_tr, addtime_te=addtime_te)
+
+
+class KernelResults:
+    def __init__(self, file, autoflush=True, verbose=False):
+        self.file = file
+        self.columns = ['Method', 'k', 'learner', 'dataset', 'nF', 'run', 'trainTime', 'testTime', 'MacroF1', 'microF1']
+        self.autoflush = autoflush
+        self.verbose = verbose
+        if os.path.exists(file):
+            self.tell('Loading existing file from {}'.format(file))
+            self.df = pd.read_csv(file, sep='\t')
+        else:
+            self.tell('File {} does not exist. Creating new frame.'.format(file))
+            self.df = pd.DataFrame(columns=self.columns)
+
+    def already_calculated(self, method, k, learner, dataset, nF, run):
+        return ((self.df['Method'] == method) &
+                (self.df['k'] == k) &
+                (self.df['learner'] == learner) &
+                (self.df['dataset'] == dataset) &
+                (self.df['nF'] == nF) &
+                (self.df['run'] == run)).any()
+
+    def add_row(self, method, k, learner, dataset, nF, run, trainTime, testTime, MacroF1, microF1):
+        s = pd.Series([method, k, learner, dataset, nF, run, trainTime, testTime, MacroF1, microF1], index=self.columns)
+        self.df = self.df.append(s, ignore_index=True)
+        if self.autoflush: self.flush()
+        self.tell(s.to_string())
+
+    def flush(self):
+        self.df.to_csv(self.file, index=False, sep='\t')
+
+    def tell(self, msg):
+        if self.verbose: print(msg)
+
+# Checks if the random index matrix for this run has been calculated and, if so, returns it.
+# If otherwise, creates a new matrix, stores it in path, and returns it.
+# This method guarantees all experiments for the same run operates on the same random index matrix.
+def get_random_matrix(base_path, dataset, nR, k, run, X_train, verbose=False):
+    matrix_dir = os.path.join(base_path, dataset, 'nr' + str(nR), 'k' + str(k))
+    matrix_path = os.path.join(matrix_dir, 'run'+str(run)+'.pickle')
+    if os.path.exists(matrix_path):
+        if verbose: print('Loading random matrix from {}'.format(matrix_path))
+        random_matrix = pickle.load(open(matrix_path, 'rb'))
+    else:
+        if verbose: print('Creating random matrix and storing it in {}'.format(matrix_path))
+        os.makedirs(matrix_dir)
+        random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
+        random_indexing.fit(X_train)
+        random_matrix = random_indexing.projection_matrix
+        pickle.dump(random_matrix, open(matrix_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+    return random_matrix
+
+
+matrix_dir = "../../matrices"
+out_dir = "../../results"
+create_if_not_exists(matrix_dir)
+create_if_not_exists(out_dir)
+
+out_file = os.path.join(out_dir, "Kernel_experiments.csv")
+
+results = KernelResults(out_file, verbose=True)
+
+bow_enabled = True
+ri_enabled  = True
+
+linearsvc_enabled = True
+svc_enabled = False
+
+raw_enabled = True
+kernel_enabled = True
+diagonal_enabled = True
+
+for dataset in ['reuters21578','20newsgroups','ohsumed']:
+    print("Dataset: {}".format(dataset))
+
+    data = TextCollectionLoader(dataset=dataset)
+    nF = data.num_features()
+    X_train, y_train = data.get_devel_set()
+    X_test, y_test = data.get_test_set()
+
+    if bow_enabled:
+        # here we use the co-occurrence space as the projection from which the correlations will be calculated
+        P = X_train
+
+        if linearsvc_enabled:
+            if raw_enabled:
+                experiment(X_train, y_train, X_test, y_test, LinearSVC(), 'BoW', 1, dataset, nF, results)
+            if kernel_enabled:
+                experiment_kernel_linsvc(P, X_train, y_train, X_test, y_test, 'BoW_R', 1, dataset, nF, results)
+            if diagonal_enabled:
+                experiment_diag_linsvc(P, X_train, y_train, X_test, y_test, 'Bow_D', 1, dataset, nF, results)
+        if svc_enabled:
+            if raw_enabled:
+                experiment(X_train, y_train, X_test, y_test, SVC(kernel='linear'), 'BoW', 1, dataset, nF, results)
+            if kernel_enabled:
+                experiment_kernel_svc(P, X_train, y_train, X_test, y_test, 'BoW_R', 1, dataset, nF, results)
+            if diagonal_enabled:
+                experiment_diag_linsvc(P, X_train, y_train, X_test, y_test, 'Bow_D', 1, dataset, nF, results)
+
+    if ri_enabled:
+        for non_zeros in [2, -1]:
             if non_zeros == -1:
-                non_zeros = nF/100
+                non_zeros = nF / 100
+            for run in range(10):
+                for nR in [2500, 5000, 6000, 7000, 8000, 9000, 10000, 15000]:
+                    print("\trun {}: nR={} k={}".format(run,nR,non_zeros))
+                    if nR > nF: continue
+                    P = get_random_matrix(matrix_dir, dataset, nR, non_zeros, run, X_train, verbose=True)
+                    XP_train = X_train.dot(P)
+                    XP_test  = X_test.dot(P)
 
-            if bow_enabled:
-                X_train, y_train = data.get_devel_set()
-                X_test,  y_test = data.get_test_set()
-                experiment(X_train, y_train, X_test,  y_test, LinearSVC(), 'BoW', 1, dataset, nF, fo)
+                    if linearsvc_enabled:
+                        if raw_enabled:
+                            experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, results, run=run)
+                        if kernel_enabled:
+                            experiment_kernel_linsvc(P, XP_train, y_train, XP_test, y_test, 'RI_R', non_zeros, dataset, nR, results, run=run)
+                        if diagonal_enabled:
+                            experiment_diag_linsvc(P, XP_train, y_train, XP_test, y_test, 'RI_D', non_zeros, dataset, nR, results, run=run)
+                    if svc_enabled:
+                        if raw_enabled:
+                            experiment(XP_train, y_train, XP_test, y_test, SVC(kernel='linear'), 'RI', non_zeros, dataset, nR, results, run=run)
+                        if kernel_enabled:
+                            experiment_kernel_svc(P, XP_train, y_train, XP_test, y_test, 'RI_R', non_zeros, dataset, nR, results, run=run)
+                        if diagonal_enabled:
+                            experiment_diag_linsvc(P, XP_train, y_train, XP_test, y_test, 'RI_D', non_zeros, dataset, nR, results, run=run)
 
-                if bow_r_enabled:
-                    t_ini = time.time()
-                    F = get_cov_matrix(X_train)
-                    # Fd = get_cholesky(F)
-                    # if Fd is not None:
-                    #     XF_train = X_train.dot(Fd)
-                    #     ftr_time = time.time() - t_ini
-                    #     t_ini = time.time()
-                    #     XF_test = X_test.dot(Fd)
-                    #     fte_time = time.time() - t_ini
-                    #     experiment(XF_train, y_train, XF_test, y_test, LinearSVC(), 'BowFch', 1, dataset, nF, fo, run=1, addtime_tr=ftr_time, addtime_te=fte_time)
-
-                    Fd = csc_matrix(np.diag(np.sqrt(np.diag(F.toarray()))))
-                    XFD_train = X_train.dot(Fd)
-                    XFD_test = X_test.dot(Fd)
-                    experiment(XFD_train, y_train, XFD_test, y_test, LinearSVC(), 'DBowF', 1, dataset, nF, fo, run=1, addtime_tr=0, addtime_te=0)
-
-
-
-            # for run in range(10):
-            #     for nR in [2500,5000,6000,7000,8000,9000,10000,15000]:
-            #         if nR > nF: continue
-            #         data = TextCollectionLoader(dataset=dataset)
-            #         X_train, y_train = data.get_devel_set()
-            #         X_test, y_test = data.get_test_set()
-            #
-            #         if any([ri_enabled, kri_enabled, krich_enabled, dri_enabled]):
-            #             random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
-            #             random_indexing.fit(X_train)
-            #             t_ini = time.time()
-            #             R = get_cov_matrix(random_indexing.projection_matrix)
-            #             r_time = time.time() - t_ini
-            #             XP_train = random_indexing.transform(X_train)
-            #             XP_test = random_indexing.transform(X_test)
-            #
-            #         if ri_enabled:
-            #             experiment(XP_train, y_train, XP_test, y_test, LinearSVC(), 'RI', non_zeros, dataset, nR, fo, run=run)
-            #
-            #         if kri_enabled:
-            #             experiment(XP_train, y_train, XP_test, y_test, svc_ri_kernel(R), 'KRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=r_time)
-            #
-            #         if krich_enabled:
-            #             t_ini = time.time()
-            #             Ld = get_cholesky(R)
-            #             if Ld is None: break
-            #             XPL_train = XP_train.dot(Ld)
-            #             tr_time = time.time()-t_ini
-            #             XPL_test = XP_test.dot(Ld)
-            #             te_time = time.time()-t_ini-tr_time
-            #             experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'KRIch', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_time, addtime_te=te_time)
-            #
-            #         if dri_enabled:
-            #             t_ini = time.time()
-            #             Ld = csc_matrix(np.diag(np.sqrt(np.diag(R.toarray()))))
-            #             XPL_train = XP_train.dot(Ld)
-            #             tr_time = time.time() - t_ini
-            #             XPL_test = XP_test.dot(Ld)
-            #             te_time = time.time() - t_ini - tr_time
-            #             r_diag_time = math.sqrt(r_time*1.0)
-            #             experiment(XPL_train, y_train, XPL_test, y_test, LinearSVC(), 'DRI', non_zeros, dataset, nR, fo, run=run, addtime_tr=tr_time+r_diag_time, addtime_te=te_time)
-            #
-            #         if compute_distances:
-            #             plot_distances(X_train, XP_train, nR)
-
-            bow_enabled = False
-            bow_r_enabled = False
-        print('Done! (with {} errors)'.format(errors))
