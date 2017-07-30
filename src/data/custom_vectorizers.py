@@ -5,8 +5,11 @@ import scipy
 import sklearn
 import math
 from joblib import Parallel, delayed
-from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from feature_selection.tsr_function import *
+from sklearn.feature_extraction.text import _document_frequency, TfidfTransformer, CountVectorizer
+import scipy.sparse as sp
+from sklearn.utils.validation import check_is_fitted
+from sklearn.preprocessing import normalize
 
 
 class BM25:
@@ -134,3 +137,49 @@ class TSRweighting:
         return scipy.sparse.csr_matrix(weighted_X)
 
 
+class TfidfTransformerAlphaBeta(TfidfTransformer):
+    """
+    This is a modified version of the TfidfTransformer from scikit-learn which allows to control
+    the relative importance of the tf and idf factors by means of two additional parameters alpha and beta
+    which become the power of both factors, i.e., this transformer computes the tf^alpha * idf^beta
+    """
+
+    def __init__(self, alpha=1.0, beta=1.0, **kwargs):
+        self.alpha = alpha
+        self.beta = beta
+        super(TfidfTransformerAlphaBeta, self).__init__(**kwargs)
+
+    def transform(self, X, copy=True):
+        """
+        Replies the behaviour of TfidfTransformer from scikitlear, but incorporating two power parameters, alpha and
+        beta so that the returned weights are tf^alpha * idf^beta. The rest is a copy of the original code
+        """
+        if hasattr(X, 'dtype') and np.issubdtype(X.dtype, np.float):
+            # preserve float family dtype
+            X = sp.csr_matrix(X, copy=copy)
+        else:
+            # convert counts or binary occurrences to floats
+            X = sp.csr_matrix(X, dtype=np.float64, copy=copy)
+
+        n_samples, n_features = X.shape
+
+        if self.sublinear_tf:
+            np.log(X.data, X.data)
+            X.data += 1
+
+        if self.use_idf:
+            check_is_fitted(self, '_idf_diag', 'idf vector is not fitted')
+
+            expected_n_features = self._idf_diag.shape[0]
+            if n_features != expected_n_features:
+                raise ValueError("Input has n_features=%d while the model"
+                                 " has been trained with n_features=%d" % (
+                                     n_features, expected_n_features))
+
+            # this is the only modification !
+            X = X.power(self.alpha) * self._idf_diag.power(self.beta)
+
+        if self.norm:
+            X = normalize(X, norm=self.norm, copy=False)
+
+        return X
