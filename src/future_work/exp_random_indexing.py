@@ -179,6 +179,8 @@ class KernelResults:
             self.df = pd.read_csv(file, sep='\t')
         else:
             self.tell('File {} does not exist. Creating new frame.'.format(file))
+            dir = os.path.dirname(self.file)
+            if dir and not os.path.exists(dir): os.makedirs(dir)
             self.df = pd.DataFrame(columns=self.columns)
 
     def already_calculated(self, method, k, learner, dataset, nF, run):
