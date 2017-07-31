@@ -15,6 +15,7 @@ import pandas as pd
 import argparse
 import numpy as np
 import matplotlib
+matplotlib.use('Agg')
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib import cm
@@ -25,6 +26,7 @@ if 'MATPLOTLIB_USE' in os.environ:
     matplotlib.use(os.environ['MATPLOTLIB_USE'])
 import matplotlib.pyplot as plt
 from matplotlib import cm
+
 
 def warn(*args, **kwargs): pass
 import warnings
@@ -68,7 +70,7 @@ if __name__ == "__main__":
 
     if args.learner == 'LinearSVC':
         clf = OneVsRestClassifier(LinearSVC())
-        clf_params = {'estimator__C': [10 ** i for i in range(0, 4)]}
+        clf_params = {'estimator__C': [10 ** i for i in range(0, 1)]}
     else:
         print("Learner {} is not supported. Exit.".format(args.learner))
 
@@ -77,7 +79,7 @@ if __name__ == "__main__":
     print("Init exploration")
     macro_results = []
     micro_results = []
-    grid = np.linspace(0.25, 2.0, 8)
+    grid = np.linspace(0.25, 2.0, 2)
     for alpha in grid:
         for beta in grid:
 
