@@ -211,7 +211,8 @@ def get_random_matrix(base_path, dataset, nR, k, run, X_train, verbose=False):
         random_matrix = pickle.load(open(matrix_path, 'rb'))
     else:
         if verbose: print('Creating random matrix and storing it in {}'.format(matrix_path))
-        os.makedirs(matrix_dir)
+        if not os.path.exists(matrix_dir):
+             os.makedirs(matrix_dir)
         random_indexing = RandomIndexing(latent_dimensions=nR, non_zeros=non_zeros, positive=False, postnorm=True)
         random_indexing.fit(X_train)
         random_matrix = random_indexing.projection_matrix
@@ -238,7 +239,7 @@ raw_enabled = True
 kernel_enabled = True
 diagonal_enabled = True
 
-for dataset in ['reuters21578','20newsgroups','ohsumed']:
+for dataset in ['ohsumed20k']:
     print("Dataset: {}".format(dataset))
 
     data = TextCollectionLoader(dataset=dataset)
