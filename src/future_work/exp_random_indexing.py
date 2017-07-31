@@ -15,6 +15,7 @@ import cPickle as pickle
 from helpers import create_if_not_exists
 from sklearn.preprocessing import normalize
 import scipy
+import matplotlib.pyplot as plt
 
 def plot_distances(X_train, XP_train, nR):
     print("pair-wise distances in original space")
@@ -178,6 +179,8 @@ class KernelResults:
             self.df = pd.read_csv(file, sep='\t')
         else:
             self.tell('File {} does not exist. Creating new frame.'.format(file))
+            dir = os.path.dirname(self.file)
+            if dir and not os.path.exists(dir): os.makedirs(dir)
             self.df = pd.DataFrame(columns=self.columns)
 
     def already_calculated(self, method, k, learner, dataset, nF, run):
@@ -200,6 +203,64 @@ class KernelResults:
     def tell(self, msg):
         if self.verbose: print(msg)
 
+    def compare_plot(self, baseline, method1, method2, with_learner, with_dataset, with_k, save_to_dir='', min_nf=2500, max_nf=15000, eval = 'MacroF1'):
+        def select(method, nf=0, run=0, k=1, eval='MacroF1'):
+            df=self.df
+            s = df[(df['Method'] == method) & (df['learner'] == with_learner) & (df['dataset'] == with_dataset) & (df['k'] == k) & (df['run'] == run)]
+            if nf > 0:
+                s = s[df['nF'] == nf]
+            return s.iloc[0][eval]
+
+        nf_values = [x for x in self.df['nF'].unique() if x >= min_nf and x <= max_nf]
+        run_values = self.df['run'].unique()
+
+        bow_baseline = select(baseline, eval=eval)
+        serie_1 = []
+        serie_2 = []
+        p_vals  = []
+
+        for nf in nf_values:
+            runs_1 = [select(method1, nf, r, with_k, eval) for r in run_values]
+            runs_2 = [select(method2, nf, r, with_k, eval) for r in run_values]
+            mu_1, std_1 = np.mean(runs_1), np.std(runs_1)
+            mu_2, std_2 = np.mean(runs_2), np.std(runs_2)
+            serie_1.append((mu_1,std_1))
+            serie_2.append((mu_2, std_2))
+            ts,pvalue=scipy.stats.ttest_rel(runs_1, runs_2)
+            p_vals.append(pvalue)
+
+        linewidth = 3
+        fig, (axmain,axttest) = plt.subplots(2, figsize=(5.625,10))
+        x_lims=[nf_values[0] - 100, nf_values[-1] + 100]
+
+        axmain.grid(True)
+        axmain.set_title(with_dataset.title())
+        axmain.set_ylabel(eval)
+        axmain.set_xlim(x_lims)
+        axmain.errorbar(nf_values, zip(*serie_1)[0], yerr=zip(*serie_1)[1], fmt='y-o', ecolor='k', label=method1, linewidth=linewidth, elinewidth=1)
+        axmain.errorbar(nf_values, zip(*serie_2)[0], yerr=zip(*serie_2)[1], fmt='r-o', ecolor='k', label=method2, linewidth=linewidth, elinewidth=1)
+        axmain.plot(x_lims, [bow_baseline] * 2, 'b--', label=baseline, linewidth=linewidth)
+        axmain.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05), fancybox=False, shadow=False, ncol=5)
+
+        axttest.grid(True)
+        axttest.semilogy(nf_values, p_vals, 'k-o', linewidth=linewidth, label=method1+" vs "+method2)
+        axttest.semilogy(x_lims, [0.005] * 2, 'g--', label='0.005', linewidth=linewidth)
+        axttest.semilogy(x_lims, [0.001] * 2, 'g--', label='0.001', linewidth=linewidth)
+        axttest.set_xlim(x_lims)
+        axttest.text(x_lims[0]+200, 0.005, r'$\alpha = 0.005$', fontsize=15)
+        axttest.text(x_lims[0]+200, 0.001, r'$\alpha = 0.001$', fontsize=15)
+        axttest.set_xlabel('nR')
+        axttest.set_ylabel('p-value')
+
+        if save_to_dir:
+            if not os.path.exists(save_to_dir):
+                os.makedirs(save_to_dir)
+            plot_name = method1+'_vs_'+method2 + '_' + with_learner + '_' + with_dataset + '_' + str(with_k) + '_' + eval + ".pdf"
+            plt.savefig(os.path.join(save_to_dir, plot_name), format='pdf')
+        else:
+            plt.show()
+
+
 # Checks if the random index matrix for this run has been calculated and, if so, returns it.
 # If otherwise, creates a new matrix, stores it in path, and returns it.
 # This method guarantees all experiments for the same run operates on the same random index matrix.
@@ -219,6 +280,19 @@ def get_random_matrix(base_path, dataset, nR, k, run, X_train, verbose=False):
         pickle.dump(random_matrix, open(matrix_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
     return random_matrix
 
+r = KernelResults('../../results/Kernel_experiments.csv')
+for dataset in ['ohsumed20k']:#['reuters21578', '20newsgroups', 'ohsumed20k']:
+    nF = 28828 if dataset == 'reuters21578' else (26747 if dataset=='20newsgroups' else 24768)
+    if dataset == 'ohsumed20k': max_nf = 10000
+    for eval in ['MacroF1', 'microF1']:
+        r.compare_plot('BoW', 'RI', 'RI_R', 'LinearSVC', dataset, 2.0, save_to_dir='../plots/'+dataset+'/k2', eval=eval, max_nf=max_nf)
+        r.compare_plot('BoW', 'RI', 'RI_D', 'LinearSVC', dataset, 2.0, save_to_dir='../plots/'+dataset+'/k2', eval=eval, max_nf=max_nf)
+        r.compare_plot('BoW', 'RI_D', 'RI_R', 'LinearSVC', dataset, 2.0, save_to_dir='../plots/'+dataset+'/k2', eval=eval, max_nf=max_nf)
+        # r.compare_plot('BoW', 'RI', 'RI_R', 'LinearSVC', dataset, nF/100, save_to_dir='../plots/' + dataset + '/k1p', eval=eval)
+        # r.compare_plot('BoW', 'RI', 'RI_D', 'LinearSVC', dataset, nF/100, save_to_dir='../plots/' + dataset + '/k1p', eval=eval)
+        # r.compare_plot('BoW', 'RI_D', 'RI_R', 'LinearSVC', dataset, nF/100, save_to_dir='../plots/' + dataset + '/k1p',eval=eval)
+#r.compare_plot('BoW','RI','RI_R','LinearSVC','reuters21578', 2.0, eval='MacroF1')
+sys.exit()
 
 matrix_dir = "../../matrices"
 out_dir = "../../results"
@@ -292,4 +366,5 @@ for dataset in ['ohsumed20k']:
                             experiment_kernel_svc(P, XP_train, y_train, XP_test, y_test, 'RI_R', non_zeros, dataset, nR, results, run=run)
                         if diagonal_enabled:
                             experiment_diag_linsvc(P, XP_train, y_train, XP_test, y_test, 'RI_D', non_zeros, dataset, nR, results, run=run)
+
 

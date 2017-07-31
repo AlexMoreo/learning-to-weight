@@ -2,7 +2,6 @@ import cPickle as pickle
 import tarfile
 from glob import glob
 from os.path import join
-
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import urllib
@@ -270,7 +269,8 @@ class TextCollectionLoader:
     def get_categories(self):
         return self.devel.target_names
 
-    def fetch_20newsgroups(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_20newsgroups(cls, data_path=None, subset='train'):
         if data_path is None:
             data_path = os.path.join(get_data_home(), '20newsgroups')
         create_if_not_exists(data_path)
@@ -283,7 +283,8 @@ class TextCollectionLoader:
             dataset = pickle.load(open(_20news_pickle_path, 'rb'))
         return dataset
 
-    def fetch_reuters21579(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_reuters21579(cls, data_path=None, subset='train'):
         if data_path is None:
             data_path = os.path.join(get_data_home(), 'reuters21578')
         reuters_pickle_path = os.path.join(data_path, "reuters." + subset + ".pickle")
@@ -304,7 +305,7 @@ class TextCollectionLoader:
 
             pickle_tr = pickle_documents(parser.tr_docs, "train")
             pickle_te = pickle_documents(parser.te_docs, "test")
-            self.sout('Empty docs %d' % parser.empty_docs)
+            #self.sout('Empty docs %d' % parser.empty_docs)
             requested_subset = pickle_tr if subset == 'train' else pickle_te
         else:
             requested_subset = pickle.load(open(reuters_pickle_path, 'rb'))
@@ -313,7 +314,8 @@ class TextCollectionLoader:
         text_data, topics = zip(*data)
         return Dataset(data=text_data, target=topics, target_names=requested_subset['categories'])
 
-    def fetch_ohsumed20k(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_ohsumed20k(cls, data_path=None, subset='train'):
         _dataname = 'ohsumed_20k'
         if data_path is None:
             data_path = join(os.path.expanduser('~'), _dataname)
@@ -354,7 +356,8 @@ class TextCollectionLoader:
 
         return pickle.load(open(pickle_file, 'rb'))
 
-    def fetch_ohsumed50k(self, data_path=None, subset='train', train_test_split=0.7):
+    @classmethod
+    def fetch_ohsumed50k(cls, data_path=None, subset='train', train_test_split=0.7):
         _dataname = 'ohsumed'
         if data_path is None:
             data_path = join(os.path.expanduser('~'), _dataname)
