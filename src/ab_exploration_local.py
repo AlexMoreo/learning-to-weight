@@ -61,7 +61,7 @@ class AB_Results:
 def get_learner_and_params():
     if args.learner == 'LinearSVC':
         clf = LinearSVC()
-        clf_params = {'clf__C': [10 ** i for i in range(0, 1)]}
+        clf_params = {'clf__C': [10 ** i for i in range(0, 3)]}
     else:
         print("Learner {} is not supported. Exit.".format(args.learner))
 
@@ -162,11 +162,11 @@ if __name__ == "__main__":
 
         parameters = {
             'tfidf__alpha': [1.0] if args.params < 2 else np.linspace(0.25, 2.0, 8),
-            'tfidf__beta': [1.0] if args.params < 1 else np.linspace(0.25, 2.0, 2),
+            'tfidf__beta': [1.0] if args.params < 1 else np.linspace(0.25, 2.0, 8),
         }
         parameters.update(clf_params)
 
-        grid_search = GridSearchCV(pipeline, parameters, n_jobs=-1, verbose=1, cv=min(2,prev_c))#, scoring=make_scorer(macroF1))
+        grid_search = GridSearchCV(pipeline, parameters, n_jobs=-1, verbose=1, cv=min(5,prev_c))#, scoring=make_scorer(macroF1))
         print("Performing grid search...")
         print("pipeline:", [name for name, _ in pipeline.steps])
         print("parameters:")
