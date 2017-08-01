@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     if args.learner == 'LinearSVC':
         clf = OneVsRestClassifier(LinearSVC())
-        clf_params = {'estimator__C': [10 ** i for i in range(0, 1)]}
+        clf_params = {'estimator__C': [10 ** i for i in range(0, 3)]}
     else:
         print("Learner {} is not supported. Exit.".format(args.learner))
 
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     print("Init exploration")
     macro_results = []
     micro_results = []
-    grid = np.linspace(0.25, 2.0, 2)
+    grid = np.linspace(0.25, 2.0, 16)
     for alpha in grid:
         for beta in grid:
 
@@ -94,7 +94,7 @@ if __name__ == "__main__":
             else:
                 print("Vectorizer {} is not supported. Exit.".format(args.vectorizer))
 
-            wXtr = vect.fit_transform(Xtr)
+            wXtr = vect.fit_transform(Xtr,ytr)
             wXte = vect.transform(Xte)
 
             t0 = time()
