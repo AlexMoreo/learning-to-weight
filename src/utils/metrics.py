@@ -74,4 +74,3 @@ def microF1(true_labels, predicted_labels):
         aggregate_cell(accum, single_metric_statistics(true_labels[:, c], predicted_labels[:, c]))
 
     return f1(accum)
-

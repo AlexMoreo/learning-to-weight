@@ -1,14 +1,14 @@
 from __future__ import print_function
 from pprint import pprint
 from time import time
-from data.custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
+from custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
-from data.dataset_loader import TextCollectionLoader
+from dataset_loader import TextCollectionLoader
 from sklearn.multiclass import OneVsRestClassifier
-from feature_selection.tsr_function import information_gain, chi_square, relevance_frequency, conf_weight, gain_ratio, get_supervised_matrix
-from utils.metrics import *
+from tsr_function import information_gain, chi_square, relevance_frequency, conf_weight, gain_ratio, get_supervised_matrix
+from metrics import *
 import sys,os
 from os.path import join
 import pandas as pd

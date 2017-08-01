@@ -103,6 +103,9 @@ class TSRweighting(BaseEstimator,TransformerMixin):
     def fit(self, X, y):
         self.unsupervised_vectorizer = TfidfTransformer(norm=None, use_idf=False, smooth_idf=False, sublinear_tf=self.sublinear_tf).fit(X)
 
+        if len(y.shape) == 1:
+            y = np.expand_dims(y, axis=1)
+
         nD,nC = y.shape
         nF = X.shape[1]
 

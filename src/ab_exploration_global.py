@@ -5,18 +5,24 @@ warnings.warn = warn
 
 from pprint import pprint
 from time import time
-from data.custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
+from custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
-from data.dataset_loader import TextCollectionLoader
+from dataset_loader import TextCollectionLoader
 from sklearn.multiclass import OneVsRestClassifier
-from feature_selection.tsr_function import information_gain, chi_square, relevance_frequency, conf_weight, gain_ratio, get_supervised_matrix
-from utils.metrics import *
+from tsr_function import information_gain, chi_square, relevance_frequency, conf_weight, gain_ratio, get_supervised_matrix
+from metrics import *
 import sys,os
 import pandas as pd
 import argparse
 import numpy as np
+from sklearn.metrics import make_scorer
+from helpers import err_exception
+
+
+# alpha e beta?
+# local vs global
 
 class AB_Results:
     def __init__(self, file, autoflush=True, verbose=False):
@@ -53,7 +59,9 @@ class AB_Results:
 
 if __name__ == "__main__":
 
-    weight_functions = ['tfidf', 'bm25', 'tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw']
+    unsupervised_weight_functions = ['tfidf', 'bm25']
+    supervised_weight_functions = ['tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw']
+    weight_functions = unsupervised_weight_functions + supervised_weight_functions
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=TextCollectionLoader.valid_datasets)
     parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results.csv")
@@ -70,7 +78,7 @@ if __name__ == "__main__":
     data = TextCollectionLoader(dataset=args.dataset, vectorizer='tf', rep_mode='sparse', feat_sel=args.fs, sublinear_tf=False)
     nF = data.num_features()
 
-    vectorizer_name = ('' if args.not_explore_ab else 'AB') + ('Log' if args.sublinear_tf else '') + args.vectorizer
+    vectorizer_name = ('' if args.not_explore_ab else 'AB') + ('Log' if args.sublinear_tf else '') + args.vectorizer + (args.global_policy if args.vectorizer in supervised_weight_functions else '')
     if not args.recompute and results.already_calculated(args.learner, args.dataset, vectorizer_name, nF):
         print("Experiment ({} {} {} {}) has been already calculated. Skipping it.".format(args.learner, args.dataset, vectorizer_name, nF))
         sys.exit(0)
@@ -82,6 +90,7 @@ if __name__ == "__main__":
     if args.vectorizer == 'tfidf':
         vect = TfidfTransformerAlphaBeta(sublinear_tf=args.sublinear_tf, use_idf=True, norm='l2')
     elif args.vectorizer == 'bm25':
+        err_exception(args.sublinear_tf, 'Logarithmic version of BM25 is not available. Exit.')
         vect = BM25TransformerAlphaBeta(norm='none')
     elif args.vectorizer in weight_functions:
         supervised_matrix = get_supervised_matrix(Xtr, ytr)
@@ -91,7 +100,7 @@ if __name__ == "__main__":
 
     if args.learner == 'LinearSVC':
         clf = OneVsRestClassifier(LinearSVC())
-        clf_params = {'clf__estimator__C': [10 ** i for i in range(0, 4)]}
+        clf_params = {'clf__estimator__C': [10 ** i for i in range(0, 1)]}
     else:
         print("Learner {} is not supported. Exit.".format(args.learner))
 
@@ -106,7 +115,7 @@ if __name__ == "__main__":
     }
     parameters.update(clf_params)
 
-    grid_search = GridSearchCV(pipeline, parameters, n_jobs=-1, verbose=1)
+    grid_search = GridSearchCV(pipeline, parameters, n_jobs=-1, verbose=1, cv=5)#, scoring=make_scorer(macroF1))
     print("Performing grid search...")
     print("pipeline:", [name for name, _ in pipeline.steps])
     print("parameters:")
