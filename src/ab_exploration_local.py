@@ -1,7 +1,5 @@
 from __future__ import print_function
-def warn(*args, **kwargs): pass
-import warnings
-warnings.warn = warn
+import utils.disable_sklearn_warnings
 from pprint import pprint
 from time import time
 from data.custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
@@ -9,54 +7,22 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 from data.dataset_loader import TextCollectionLoader
-from sklearn.multiclass import OneVsRestClassifier
-from feature_selection.tsr_function import information_gain, chi_square, relevance_frequency, conf_weight, gain_ratio, get_supervised_matrix
+from feature_selection.tsr_function import *
 from utils.metrics import *
 import sys,os
 import pandas as pd
 import argparse
 import numpy as np
 from utils.helpers import err_exception
+from utils.result_table import AB_Results
 
-
-# alpha e beta?
-# local vs global
 # ver la distribucion de tf y la distribuicion de idf
-# fisher score
+# fisher score and PMI and GSS and IG(pos)
 
-class AB_Results:
+class AB_Results_Local(AB_Results):
     def __init__(self, file, autoflush=True, verbose=False):
-        self.file = file
-        self.columns = ['learner', 'dataset', 'vectorizer', 'nF', 'cat', 'bestparams', 'alpha', 'beta', 'f1', 'tp', 'tn', 'fp', 'fn']
-        self.autoflush = autoflush
-        self.verbose = verbose
-        if os.path.exists(file):
-            self.tell('Loading existing file from {}'.format(file))
-            self.df = pd.read_csv(file, sep='\t')
-        else:
-            self.tell('File {} does not exist. Creating new frame.'.format(file))
-            dir = os.path.dirname(self.file)
-            if dir and not os.path.exists(dir): os.makedirs(dir)
-            self.df = pd.DataFrame(columns=self.columns)
-
-    def already_calculated(self, learner, dataset, vectorizer, nF, cat):
-        return ((self.df['learner'] == learner) &
-                (self.df['dataset'] == dataset) &
-                (self.df['vectorizer'] == vectorizer) &
-                (self.df['nF'] == nF) &
-                (self.df['cat'] == cat)).any()
-
-    def add_row(self, learner, dataset, vectorizer, nF, cat, bestparams, alpha, beta, f1, cell):
-        s = pd.Series([learner, dataset, vectorizer, nF, cat, bestparams, alpha, beta, f1, cell.tp, cell.tn, cell.fp, cell.fn], index=self.columns)
-        self.df = self.df.append(s, ignore_index=True)
-        if self.autoflush: self.flush()
-        self.tell(s.to_string())
-
-    def flush(self):
-        self.df.to_csv(self.file, index=False, sep='\t')
-
-    def tell(self, msg):
-        if self.verbose: print(msg)
+        columns = ['learner', 'dataset', 'vectorizer', 'nF', 'cat', 'bestparams', 'alpha', 'beta', 'f1', 'tp', 'tn', 'fp', 'fn']
+        super(AB_Results_Local, self).__init__(file=file, columns=columns, autoflush=autoflush, verbose=verbose)
 
 def get_learner_and_params():
     if args.learner == 'LinearSVC':
@@ -69,7 +35,7 @@ def get_learner_and_params():
 
 def get_vectorizer():
     tsr_map = {'tfig': information_gain, 'tfchi': chi_square, 'tfgr': gain_ratio, 'tfrf': relevance_frequency,
-               'tfcw': conf_weight}
+               'tfcw': conf_weight, 'tfgss':gss, 'tfpmi':pointwise_mutual_information, 'tfigpos':positive_information_gain}
     if args.vectorizer == 'tfidf':
         vect = TfidfTransformerAlphaBeta(sublinear_tf=args.sublinear_tf, use_idf=True, norm='l2')
     elif args.vectorizer == 'bm25':
@@ -95,7 +61,7 @@ def train_and_predict(Xtr, ytr_c, Xte):
 if __name__ == "__main__":
 
     unsupervised_weight_functions = ['tfidf', 'bm25']
-    supervised_weight_functions = ['tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw']
+    supervised_weight_functions = ['tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw', 'tfgss', 'tfpmi', 'tfigpos']
     weight_functions = unsupervised_weight_functions + supervised_weight_functions
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=TextCollectionLoader.valid_datasets)
@@ -111,7 +77,7 @@ if __name__ == "__main__":
     err_exception(args.params < 0 or args.params > 2, "--params should be in [0,1,2]")
     print('Exploring {} parameters'.format(args.params))
 
-    results = AB_Results(args.resultfile, autoflush=True, verbose=True)
+    results = AB_Results_Local(args.resultfile, autoflush=True, verbose=True)
     data = TextCollectionLoader(dataset=args.dataset, vectorizer='tf', rep_mode='sparse', feat_sel=args.fs, sublinear_tf=False)
     nF = data.num_features()
     nC = data.num_categories()
@@ -122,8 +88,6 @@ if __name__ == "__main__":
     elif args.params == 1:
         vectorizer_name = 'B' + vectorizer_name
 
-
-
     Xtr, ytr = data.get_devel_set()
     Xte, yte = data.get_test_set()
 
@@ -131,7 +95,7 @@ if __name__ == "__main__":
         supervised_matrix = get_supervised_matrix(Xtr, ytr)
 
     for cat in range(nC):
-        if not args.recompute and results.already_calculated(args.learner, args.dataset, vectorizer_name, nF, cat):
+        if not args.recompute and results.already_calculated(learner=args.learner, dataset=args.dataset, vectorizer=vectorizer_name, nF=nF, cat=cat):
             print("Experiment ({} {} {} {}) has been already calculated. Skipping it.".format(args.learner, args.dataset, vectorizer_name, nF))
             continue
 
@@ -193,4 +157,6 @@ if __name__ == "__main__":
         best_beta  = best_parameters['tfidf__beta']
         rest_parameters = ', '.join([k+'='+str(best_parameters[k]) for k in parameters.keys() if k not in ['tfidf__alpha', 'tfidf__beta']])
 
-        results.add_row(args.learner, args.dataset, vectorizer_name, nF, cat, str(rest_parameters), best_alpha, best_beta, fscore, _4cell)
+        results.add_row(learner=args.learner, dataset=args.dataset, vectorizer=vectorizer_name, nF=nF, cat=cat,
+                        bestparams=str(rest_parameters), alpha=best_alpha, beta=best_beta, f1=fscore,
+                        tp=_4cell.tp, tn=_4cell.tn, fp=_4cell.fp, fn=_4cell.fn)

@@ -34,17 +34,21 @@ def posneg_information_gain(cell):
     else:
         return ig
 
+def __ig_factor(p_tc, p_t, p_c):
+    den = p_t * p_c
+    if den != 0.0 and p_tc != 0:
+        return p_tc * math.log(p_tc / den, 2)
+    else:
+        return 0.0
 
 def information_gain(cell):
-    def ig_factor(p_tc, p_t, p_c):
-        den = p_t * p_c
-        if den != 0.0 and p_tc != 0:
-            return p_tc * math.log(p_tc / den, 2)
-        else:
-            return 0.0
+    return __ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + \
+           __ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) +\
+           __ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + \
+           __ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
 
-    return ig_factor(cell.p_tp(), cell.p_f(), cell.p_c()) + ig_factor(cell.p_fp(), cell.p_f(), cell.p_not_c()) \
-           + ig_factor(cell.p_fn(), cell.p_not_f(), cell.p_c()) + ig_factor(cell.p_tn(), cell.p_not_f(), cell.p_not_c())
+def pointwise_mutual_information(cell):
+    return __ig_factor(cell.p_tp(), cell.p_f(), cell.p_c())
 
 def gain_ratio(cell):
     pc = cell.p_c()
@@ -62,7 +66,6 @@ def relevance_frequency(cell):
     a = cell.tp
     c = cell.fp
     if c == 0: c = 1
-
     return math.log(2.0 + (a * 1.0 / c), 2)
 
 def idf(cell):
