@@ -1,7 +1,6 @@
 from __future__ import print_function
 import utils.disable_sklearn_warnings
 from pprint import pprint
-from time import time
 from data.custom_vectorizers import TfidfTransformerAlphaBeta, BM25TransformerAlphaBeta, TSRweightingAlphaBeta
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
@@ -136,9 +135,9 @@ if __name__ == "__main__":
         print("parameters:")
         pprint(parameters)
 
-        t0 = time()
+        t0 = time.time()
         grid_search.fit(Xtr, ytr_c)
-        print("done in %0.3fs" % (time() - t0))
+        print("done in %0.3fs" % (time.time() - t0))
         print()
 
         print("Best score: %0.3f" % grid_search.best_score_)
