@@ -227,7 +227,9 @@ class TSRweightingAlphaBeta(TSRweighting):
     def transform(self, X):
         if not hasattr(self, 'global_tsr_vector'): raise NameError('TSRweighting: transform method called before fit.')
         tf_X = self.unsupervised_vectorizer.transform(X).toarray()
-        if self.beta < 1.0:
+        if not self.alpha.is_integer():
+            tf_X[tf_X < 0] = 0
+        if not self.beta.is_integer():
             self.global_tsr_vector[self.global_tsr_vector < 0] = 0
         weighted_X = np.multiply(np.power(tf_X, self.alpha), np.power(self.global_tsr_vector, self.beta))
         weighted_X = sklearn.preprocessing.normalize(weighted_X, norm='l2', axis=1, copy=False)
