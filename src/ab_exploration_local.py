@@ -111,7 +111,8 @@ if __name__ == "__main__":
             yte_c_ = train_and_predict(Xtr, ytr_c, Xte)
             _4cell = single_metric_statistics(yte_c, yte_c_)
             fscore = f1(_4cell)
-            results.add_row(args.learner, args.dataset, vectorizer_name, nF, cat, 'indetermined', 1.0, 1.0, fscore, _4cell)
+            results.add_row(learner = args.learner, dataset = args.dataset, vectorizer = vectorizer_name, nF = nF, cat = cat,
+                            bestparams='indetermined', alpha =1.0, beta =1.0, f1 =fscore, tp = _4cell.tp, tn = _4cell.tn, fp = _4cell.fp, fn = _4cell.fn)
             continue
 
         vect = get_vectorizer()
