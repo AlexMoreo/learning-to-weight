@@ -26,17 +26,19 @@ class TextCollectionLoader:
     valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed', 'ohsumed20k']#, 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
     unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
+    valid_norms = ['none','l1','l2']
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'ohsumed20k':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
-                 sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False):
+                 sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False, norm='l2'):
         err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
         err_param_range('global_policy', global_policy, valid_values=TextCollectionLoader.valid_global_policies)
+        err_param_range('norm', norm, valid_values=TextCollectionLoader.valid_norms)
         err_exception(positive_cat is not None and positive_cat not in TextCollectionLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorizer_name=vectorizer
@@ -44,6 +46,8 @@ class TextCollectionLoader:
         self.sublinear_tf=sublinear_tf
         self.global_policy=global_policy
         self.verbose = verbose
+        self.supervised_4cell_matrix=None
+        self.norm=norm
 
         self.fetch_dataset(dataset)
         self.get_coocurrence_matrix()
@@ -172,27 +176,30 @@ class TextCollectionLoader:
         method = self.vectorizer_name
         #if the vectorizer was set to tf or binary, then there is nothing else to do here (the co-occurrence matrix is
         #already binary, or tf-counters -- see function get_coocurrence_matrix)
-        if (method in ['binary','l1']) or \
-                (method == 'tf' and self.sublinear_tf == False):
+        if (method in ['binary','l1']) or (method == 'tf' and self.sublinear_tf == False):
             self._devel_vec = self._devel_coocurrence
             self._test_vec = self._test_coocurrence
             if method == 'l1':
+                if self.norm not in ['l1','none']: raise ValueError('L1 term weight request with an additional normalization, this should be a mistake...')
                 if self.sublinear_tf: raise ValueError('L1 term weight request with sublinear tf, this should be a mistake...')
                 self._devel_vec = normalize(self._devel_vec, norm='l1', axis=1, copy=False)
                 self._test_vec = normalize(self._test_vec, norm='l1', axis=1, copy=False)
         else:
             if method in ['tfidf', 'tf']:
                 idf = 'idf' in self.vectorizer_name
-                vectorizer = TfidfTransformer(norm=u'l2', use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
+                vectorizer = TfidfTransformer(norm=self.norm, use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
             elif method == 'bm25':
+                if self.norm != 'none':
+                    print('Warning: bm25 with a post-normalization.')
                 err_exception(self.sublinear_tf, "BM25 can not be combined with sublinear_tf")
-                vectorizer = BM25Transformer()
+                vectorizer = BM25Transformer(norm=self.norm)
             elif method in self.supervised_tw_methods:
                 tsr_map = {'tfig':information_gain, 'tfchi2':chi_square, 'tfgr':gain_ratio, 'tfrf':relevance_frequency, 'tfcw':conf_weight, 'tffs':fisher_score_binary}
                 vectorizer = TSRweighting(tsr_map[method], global_policy=self.global_policy,
-                                          supervised_4cell_matrix=self.supervised_4cell_matrix,
-                                          sublinear_tf=self.sublinear_tf)
+                                          supervised_4cell_matrix=self.get_4cell_matrix(),
+                                          sublinear_tf=self.sublinear_tf, norm=self.norm)
                 self.vectorizer_name += ('_'+self.global_policy)
+
             self._devel_vec = vectorizer.fit_transform(self._devel_coocurrence, self.devel.target)
             self._test_vec = vectorizer.transform(self._test_coocurrence)
 

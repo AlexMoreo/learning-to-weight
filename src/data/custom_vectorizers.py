@@ -32,7 +32,7 @@ class BM25(BaseEstimator):
 
 
 class BM25Transformer(BaseEstimator):
-    def __init__(self, k1=1.2, b=0.75, norm='l2'):
+    def __init__(self, k1=1.2, b=0.75, norm='none'):
         self.k1 = k1
         self.b = b
         self.norm = norm
@@ -92,13 +92,14 @@ informs about its relevance. Accepted policies include "max" (takes the max scor
 (which sums all category scores).
 """
 class TSRweighting(BaseEstimator,TransformerMixin):
-    def __init__(self, tsr_function, global_policy='max', supervised_4cell_matrix=None, sublinear_tf=True, n_jobs=-1):
+    def __init__(self, tsr_function, global_policy='max', supervised_4cell_matrix=None, sublinear_tf=True, norm='l2', n_jobs=-1):
         if global_policy not in ['max', 'ave', 'wave', 'sum']: raise ValueError('Global policy should be in {"max", "ave", "wave", "sum"}')
         self.tsr_function = tsr_function
         self.global_policy = global_policy
         self.supervised_4cell_matrix = supervised_4cell_matrix
         self.n_jobs=n_jobs
         self.sublinear_tf=sublinear_tf
+        self.norm=norm
 
     def fit(self, X, y):
         self.unsupervised_vectorizer = TfidfTransformer(norm=None, use_idf=False, smooth_idf=False, sublinear_tf=self.sublinear_tf).fit(X)
@@ -137,7 +138,8 @@ class TSRweighting(BaseEstimator,TransformerMixin):
         if not hasattr(self, 'global_tsr_vector'): raise NameError('TSRweighting: transform method called before fit.')
         tf_X = self.unsupervised_vectorizer.transform(X).toarray()
         weighted_X = np.multiply(tf_X, self.global_tsr_vector)
-        weighted_X = sklearn.preprocessing.normalize(weighted_X, norm='l2', axis=1, copy=False)
+        if self.norm is not None and self.norm!='none':
+            weighted_X = sklearn.preprocessing.normalize(weighted_X, norm=self.norm, axis=1, copy=False)
         return scipy.sparse.csr_matrix(weighted_X)
 
 
@@ -195,7 +197,7 @@ class TfidfTransformerAlphaBeta(TfidfTransformer):
 
 class BM25TransformerAlphaBeta(BM25Transformer):
     #def __init__(self, alpha=1.0, beta=1.0, **kwargs):
-    def __init__(self, alpha=1.0, beta=1.0, k1=1.2, b=0.75, norm='l2'):
+    def __init__(self, alpha=1.0, beta=1.0, k1=1.2, b=0.75, norm='none'):
         self.alpha = alpha
         self.beta = beta
         #super(BM25TransformerAlphaBeta, self).__init__(**kwargs)
@@ -210,7 +212,7 @@ class BM25TransformerAlphaBeta(BM25Transformer):
 
 class TSRweightingAlphaBeta(TSRweighting):
     #def __init__(self, tsr_function, alpha=1.0, beta=1.0, **kwargs):
-    def __init__(self, tsr_function, alpha=1.0, beta=1.0, global_policy = 'max', supervised_4cell_matrix = None, sublinear_tf = True, n_jobs = -1):
+    def __init__(self, tsr_function, alpha=1.0, beta=1.0, global_policy = 'max', supervised_4cell_matrix = None, sublinear_tf = True, n_jobs = -1, norm='l2'):
         self.tsr_function = tsr_function
         self.alpha = alpha
         self.beta = beta
@@ -223,6 +225,7 @@ class TSRweightingAlphaBeta(TSRweighting):
         self.supervised_4cell_matrix = supervised_4cell_matrix
         self.n_jobs=n_jobs
         self.sublinear_tf=sublinear_tf
+        self.norm=norm
 
     def transform(self, X):
         if not hasattr(self, 'global_tsr_vector'): raise NameError('TSRweighting: transform method called before fit.')

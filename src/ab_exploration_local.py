@@ -20,7 +20,7 @@ from utils.result_table import AB_Results
 
 class AB_Results_Local(AB_Results):
     def __init__(self, file, autoflush=True, verbose=False):
-        columns = ['learner', 'dataset', 'vectorizer', 'nF', 'cat', 'bestparams', 'alpha', 'beta', 'f1', 'tp', 'tn', 'fp', 'fn']
+        columns = ['learner', 'dataset', 'optimized', 'vectorizer', 'nF', 'cat', 'bestparams', 'alpha', 'beta', 'f1', 'tp', 'tn', 'fp', 'fn']
         super(AB_Results_Local, self).__init__(file=file, columns=columns, autoflush=autoflush, verbose=verbose)
 
 def get_learner_and_params():
@@ -33,17 +33,18 @@ def get_learner_and_params():
     return clf, clf_params
 
 def get_vectorizer():
-    tsr_map = {'tfig': information_gain, 'tfchi': chi_square, 'tfgr': gain_ratio, 'tfrf': relevance_frequency,
+    tsr_map = {'tfig': information_gain, 'tfchi': chi_square, 'tfgr': gain_ratio, 'tfrf': relevance_frequency, 'tffs':fisher_score_binary,
                'tfcw': conf_weight, 'tfgss':gss, 'tfpmi':pointwise_mutual_information, 'tfigpos':positive_information_gain}
+    norm = 'l2' if not args.no_norm else 'none'
     if args.vectorizer == 'tfidf':
-        vect = TfidfTransformerAlphaBeta(sublinear_tf=args.sublinear_tf, use_idf=True, norm='l2')
+        vect = TfidfTransformerAlphaBeta(sublinear_tf=args.sublinear_tf, use_idf=True, norm=norm)
     elif args.vectorizer == 'bm25':
         err_exception(args.sublinear_tf, 'Logarithmic version of BM25 is not available. Exit.')
-        vect = BM25TransformerAlphaBeta(norm='none')
+        vect = BM25TransformerAlphaBeta(norm=norm)
     elif args.vectorizer in weight_functions:
         supervised_vector = supervised_matrix[cat:cat + 1, :]
         vect = TSRweightingAlphaBeta(tsr_function=tsr_map[args.vectorizer], sublinear_tf=args.sublinear_tf,
-                                     supervised_4cell_matrix=supervised_vector)
+                                     supervised_4cell_matrix=supervised_vector, norm=norm)
     else:
         print("Vectorizer {} is not supported. Exit.".format(args.vectorizer))
 
@@ -60,7 +61,7 @@ def train_and_predict(Xtr, ytr_c, Xte):
 if __name__ == "__main__":
 
     unsupervised_weight_functions = ['tfidf', 'bm25']
-    supervised_weight_functions = ['tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw', 'tfgss', 'tfpmi', 'tfigpos']
+    supervised_weight_functions = ['tfig', 'tfgr', 'tfchi', 'tfrf', 'tfcw', 'tfgss', 'tfpmi', 'tfigpos', 'tffs']
     weight_functions = unsupervised_weight_functions + supervised_weight_functions
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark ", choices=TextCollectionLoader.valid_datasets)
@@ -68,8 +69,9 @@ if __name__ == "__main__":
     parser.add_argument("-v", "--vectorizer", help="selects one single vectorizer method to run from", type=str, choices=weight_functions)
     parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
     parser.add_argument("--sublinear_tf", help="logarithmic version of the tf-like function", default=False, action="store_true")
+    parser.add_argument("--no_norm", help="deactivates the document-length normalization", default=False, action="store_true")
     parser.add_argument("-l", "--learner", help="learner", type=str, default='LinearSVC')
-    parser.add_argument("-p", "--params", help="select the parameters to explore (0, 1, 2)", type=int, default=2)
+    parser.add_argument("-p", "--params", help="select the parameters to explore (0, 1, 2)", type=int, default=1)
     parser.add_argument("--recompute", help="even if the result was already computed, it is recomputed", default=False, action="store_true")
     args = parser.parse_args()
 
@@ -77,15 +79,11 @@ if __name__ == "__main__":
     print('Exploring {} parameters'.format(args.params))
 
     results = AB_Results_Local(args.resultfile, autoflush=True, verbose=True)
-    data = TextCollectionLoader(dataset=args.dataset, vectorizer='tf', rep_mode='sparse', feat_sel=args.fs, sublinear_tf=False)
+    data = TextCollectionLoader(dataset=args.dataset, vectorizer='tf', rep_mode='sparse', feat_sel=args.fs, sublinear_tf=False, norm='none')
     nF = data.num_features()
     nC = data.num_categories()
 
-    vectorizer_name = ('Log' if args.sublinear_tf else '') + args.vectorizer
-    if args.params == 2:
-        vectorizer_name = 'AB' + vectorizer_name
-    elif args.params == 1:
-        vectorizer_name = 'B' + vectorizer_name
+    vectorizer_name = ('Log' if args.sublinear_tf else '') + args.vectorizer.replace('tf','tf_').upper()
 
     Xtr, ytr = data.get_devel_set()
     Xte, yte = data.get_test_set()
@@ -157,6 +155,6 @@ if __name__ == "__main__":
         best_beta  = best_parameters['tfidf__beta']
         rest_parameters = ', '.join([k+'='+str(best_parameters[k]) for k in parameters.keys() if k not in ['tfidf__alpha', 'tfidf__beta']])
 
-        results.add_row(learner=args.learner, dataset=args.dataset, vectorizer=vectorizer_name, nF=nF, cat=cat,
+        results.add_row(learner=args.learner, dataset=args.dataset, optimized='y' if args.params > 0 else 'n', vectorizer=vectorizer_name, nF=nF, cat=cat,
                         bestparams=str(rest_parameters), alpha=best_alpha, beta=best_beta, f1=fscore,
                         tp=_4cell.tp, tn=_4cell.tn, fp=_4cell.fp, fn=_4cell.fn)
