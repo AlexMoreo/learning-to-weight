@@ -187,6 +187,7 @@ class TextCollectionLoader:
         else:
             if method in ['tfidf', 'tf']:
                 idf = 'idf' in self.vectorizer_name
+                if self.norm == 'none': self.norm=None
                 vectorizer = TfidfTransformer(norm=self.norm, use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
             elif method == 'bm25':
                 if self.norm != 'none':
