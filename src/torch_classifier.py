@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
     num_epochs = 1000
     hidden = 1024
-    learning_rate = 0.001
+    learning_rate = 0.01
     batch_size = 64
     patience = 5
     fs = args.fs
@@ -170,7 +170,7 @@ if __name__ == '__main__':
 
     method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
     if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
         nD = data.num_devel_documents()
         m = None
         if args.feat_info:
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         baseline_name = tf_mode + baseline
         if not results.already_calculated(dataset=args.dataset, category=args.category, method=baseline_name):
             print('\tRunning baseline %s'%baseline)
-            data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer=baseline, norm='l2' if baseline!='l1' else None, positive_cat=args.category, feat_sel=fs, sublinear_tf=args.sublinear_tf)
+            data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer=baseline, norm='l2' if baseline!='l1' else 'none', positive_cat=args.category, feat_sel=fs, sublinear_tf=args.sublinear_tf)
             trX, trY = data.get_devel_set()
             teX, teY = data.get_test_set()
             fscore, tp, tn, fp, fn = train_test_svm(trX, trY, teX, teY)
