@@ -115,7 +115,7 @@ class TCClassifierNet(nn.Module):
 
     @staticmethod
     def method_name():
-        return 'AlphaOptimizer'
+        return 'TorchClassifier'
 
 class EarlyStop:
     def __init__(self, patience=5):
@@ -150,6 +150,7 @@ if __name__ == '__main__':
     parser.add_argument("--sublinear_tf", help="logarithmic version of the tf-like function", default=False, action="store_true")
     parser.add_argument("--force", help="forces to compute the result if already calculated", default=False, action="store_true")
     parser.add_argument("--run", help="run of the experiment", default=0, type=int)
+    parser.add_argument("--feat_info", help="use supervised feature statistics", default=False, action="store_true")
     args = parser.parse_args()
 
     num_epochs = 1000
@@ -159,7 +160,7 @@ if __name__ == '__main__':
     patience = 5
     fs = args.fs
     dataset = args.dataset
-    weight_baselines = ['tfidf', 'tfchi2', 'tfig', 'tf', 'binary', 'tfrf']
+    weight_baselines = ['tfidf', 'tfchi2', 'tfig', 'tf', 'binary', 'tfrf', 'l1']
     tf_mode = 'Log' if args.sublinear_tf else ''
 
     torch.backends.cudnn.benchmark = True
@@ -167,13 +168,15 @@ if __name__ == '__main__':
 
     print("Running %s:%d" % (dataset, args.category))
 
-    if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=tf_mode+TCClassifierNet.method_name(), run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=args.sublinear_tf)
+    method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
+    if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
         nD = data.num_devel_documents()
-        m = Variable(torch.from_numpy(np.array([[x.tp*1./nD, x.fp*1./nD, x.fn*1./nD] for x in np.squeeze(data.get_4cell_matrix())], dtype=np.float32)), requires_grad=False, volatile=False).cuda()
-        #m = Variable(torch.from_numpy(
-        #    np.array([[x.tp , x.fp, x.fn] for x in np.squeeze(data.get_4cell_matrix())],
-        #             dtype=np.float32)), requires_grad=False, volatile=False).cuda()
+        m = None
+        if args.feat_info:
+            m = Variable(torch.from_numpy(np.array(
+                [[x.tp * 1. / nD, x.fp * 1. / nD, x.fn * 1. / nD] for x in np.squeeze(data.get_4cell_matrix())],
+                dtype=np.float32)), requires_grad=False, volatile=False).cuda()
         #trX, trY = as_variables(data.get_train_set(), volatile=False)
         #vaX, vaY = as_variables(data.get_validation_set())
         trX, trY = as_variables(data.get_devel_set(), volatile=False)
@@ -213,7 +216,7 @@ if __name__ == '__main__':
         cell = single_metric_statistics(teY.data.cpu().numpy(), teY_)
         fscore = f1(cell)
         print('Test F1: %.3f %%' % fscore)
-        results.add_row(dataset=args.dataset, category=args.category, method=tf_mode + TCClassifierNet.method_name(), run=args.run, f1=fscore, tp=cell.tp, tn=cell.tn, fp=cell.fp, fn=cell.fn)
+        results.add_row(dataset=args.dataset, category=args.category, method=method_name, run=args.run, f1=fscore, tp=cell.tp, tn=cell.tn, fp=cell.fp, fn=cell.fn)
 
         del trX, teX, trY, teY, model, criterion, optimizer
         gc.collect()
