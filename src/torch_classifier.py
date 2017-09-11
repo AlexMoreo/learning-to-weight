@@ -17,17 +17,7 @@ import gc
 from utils.result_table import AB_Results
 
 """
-The idea is to learn an alpha parameter for each feature. Each feature will be represented as the tf (or LogTf), and the
-weight is simply computed as tf * alpha, where there is a different alpha for feature. On top, there is a logistic
-regressor which attempts to better separate positive and negative examples. Provided that this alpha is the optimal
-idf-like score for that trainset, one could study whether there is a real correlation among the alpha distribution and
-any TSR (acting as idf-like score) distribution.
-Notes:
-- This might allow to quantify the importance of each feature: could be used as feature selection
-- The alpha-vector shall be normalized after each step, in order not to delegate the feature importance on the logistic
-regressor matrix.
-- If the alpha-vector demonstrates to be a better idf-like weight, then one could try to learn from the (tpr,fpr)
-statistics a function that computes the alpha, and observe the function plot.
+The idea is to create a classifier which leverages the supervised statiscis from the features (e.g., the tp, fp, tn, fn).
 """
 def train_test_svm(Xtr, ytr, Xte, yte):
     ytr = np.squeeze(ytr)
@@ -46,44 +36,51 @@ def train_test_svm(Xtr, ytr, Xte, yte):
     fscore = f1(cell)
     return fscore, cell.tp, cell.tn, cell.fp, cell.fn
 
-class Alpha_Results_Local(AB_Results):
+class Classifier_Results_Local(AB_Results):
     def __init__(self, file, autoflush=True, verbose=False):
         columns = ['dataset', 'category', 'method', 'run', 'f1', 'tp', 'tn', 'fp', 'fn']
-        super(Alpha_Results_Local, self).__init__(file=file, columns=columns, autoflush=autoflush, verbose=verbose)
+        super(Classifier_Results_Local, self).__init__(file=file, columns=columns, autoflush=autoflush, verbose=verbose)
 
 # Model
-class AlphaNet(nn.Module):
-    def __init__(self, input_size, num_classes, num_documents, X, hidden=100):
-        super(AlphaNet, self).__init__()
-        self.alpha = Parameter(torch.Tensor([1.0] * input_size))
-        self.logreg = nn.Linear(num_documents, num_classes, bias=True)
-        self.X = X
-        #self.linear1 = nn.Linear(input_size, num_classes, bias=True)
-        # self.linear2 = nn.Linear(hidden, num_classes, bias=True)
-        # self.relu = nn.ReLU()
+class TCClassifierNet(nn.Module):
+    def __init__(self, input_size, num_classes, hidden=1000, drop_p=0.2, supervised_statistics=None):
+        super(TCClassifierNet, self).__init__()
+        self.linear1 = nn.Linear(input_size, hidden, bias=True)
+        self.linear2 = nn.Linear(hidden, hidden, bias=True)
+        self.linear3 = nn.Linear(hidden, num_classes, bias=True)
+        self.training = False
+        self.drop_p = drop_p
+        self.supervised_statistics = supervised_statistics
+        if self.supervised_statistics is not None:
+            info_by_feat = self.supervised_statistics.size() [1]
+            self.sup_linear1 = nn.Linear(info_by_feat+1, 100)
+            self.sup_linear2 = nn.Linear(100, 1)
 
     def forward(self, x):
-        #out = self.linear1(x)
-        # xalpha = x * self.alpha
-        # xalpha_n = F.normalize(xalpha,p=2,dim=1)
-        # h = self.linear1(xalpha_n)
-        # h = self.relu(h)
-        # out = self.linear2(h)
-        #
-        x = F.normalize(x * self.alpha, p=2, dim=1)
-        X = torch.t(F.normalize(self.X * self.alpha, p=2, dim=1))
-        x = torch.mm(x, X) #the alpha can be excluded from X and then sqrted
-        out = self.logreg(x)
-        return torch.squeeze(out)
-
-    def getalpha(self):
-        return self.alpha.data
-
+        if self.supervised_statistics is not None:
+            nD,nF = x.size()
+            xflat = x.view(nD*nF,1)
+            sfeat = self.supervised_statistics.repeat(nD, 1)
+            x_feat = torch.cat([xflat,sfeat],1)
+            x_h = self.sup_linear1(x_feat)
+            x_h = F.relu(x_h)
+            x_o = self.sup_linear2(x_h).view(nD,nF) # x should be 0 if the original input is 0 <-----------------
+            x_ones = torch.gt(x,0.0).type(torch.FloatTensor).cuda()
+            x = x_o * x_ones
+        x = self.linear1(x)
+        x = F.relu(x)
+        x = F.dropout(x, self.drop_p, self.training)
+        x = self.linear2(x)
+        x = F.relu(x)
+        x = F.dropout(x, self.drop_p, self.training)
+        x = self.linear3(x)
+        return torch.squeeze(x)
 
     def train(self, X, y, optimizer, criterion, batch_size=50):
         nD = X.size()[0]
         num_batches = nD // batch_size
         loss_ = 0.0
+        self.training = True
         for k in range(num_batches):
             start, end = k * batch_size, (k + 1) * batch_size
             optimizer.zero_grad()
@@ -93,12 +90,14 @@ class AlphaNet(nn.Module):
             loss.backward()
             optimizer.step()
             loss_+= loss.data[0]
+        self.training = False
         return loss_ / num_batches
 
     def test(self, X, y, criterion=None, batch_size=50):
         loss, correct, total = 0, 0, 0
         nD = X.size()[0]
         num_batches = nD // batch_size
+        predictions = np.zeros((nD))
         if nD % batch_size: num_batches += 1
         for k in range(num_batches):
             start, end = k * batch_size, min((k + 1) * batch_size, nD)
@@ -106,15 +105,13 @@ class AlphaNet(nn.Module):
             outputs = self(X[start:end])
             loss += criterion(outputs, labels) if criterion else 0
             predicted = torch.round(torch.sigmoid(outputs).data)
-            total += labels.size(0)
-            correct += (predicted == labels.data).sum()
-        acc = 100.0 * correct / total
+            predictions[start:end] = predicted.cpu().numpy()
         loss /= num_batches
 
         if criterion is None:
-            return acc
+            return predictions
         else:
-            return acc, loss.data[0]
+            return predictions, loss.data[0]
 
     @staticmethod
     def method_name():
@@ -148,16 +145,17 @@ if __name__ == '__main__':
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark",
                         choices=TextCollectionLoader.valid_datasets)
     parser.add_argument("-c", "--category", help="indicates the positive category", type=int)
-    parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results/TorchAlpha.results.csv")
+    parser.add_argument("-r", "--resultfile", help="path to a result container file (.csv)", type=str, default="../results/TorchClassif.results.csv")
     parser.add_argument("--fs", help="feature selection ratio (default 1.0)", type=float, default=None)
     parser.add_argument("--sublinear_tf", help="logarithmic version of the tf-like function", default=False, action="store_true")
+    parser.add_argument("--force", help="forces to compute the result if already calculated", default=False, action="store_true")
     parser.add_argument("--run", help="run of the experiment", default=0, type=int)
     args = parser.parse_args()
 
-    num_epochs = 5
-    hidden = 100
-    learning_rate = 0.001
-    batch_size = 10
+    num_epochs = 1000
+    hidden = 1024
+    learning_rate = 0.01
+    batch_size = 64
     patience = 5
     fs = args.fs
     dataset = args.dataset
@@ -165,22 +163,27 @@ if __name__ == '__main__':
     tf_mode = 'Log' if args.sublinear_tf else ''
 
     torch.backends.cudnn.benchmark = True
-    results = Alpha_Results_Local(args.resultfile, autoflush=True, verbose=True)
+    results = Classifier_Results_Local(args.resultfile, autoflush=True, verbose=True)
 
     print("Running %s:%d" % (dataset, args.category))
-    print('Go!')
 
-    if not results.already_calculated(dataset=args.dataset, category=args.category, method=tf_mode+AlphaNet.method_name(), run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=args.sublinear_tf)
-        trX, trY = as_variables(data.get_train_set(), volatile=False)
-        vaX, vaY = as_variables(data.get_validation_set())
+    if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=tf_mode+TCClassifierNet.method_name(), run=args.run):
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=args.sublinear_tf)
+        nD = data.num_devel_documents()
+        m = Variable(torch.from_numpy(np.array([[x.tp*1./nD, x.fp*1./nD, x.fn*1./nD] for x in np.squeeze(data.get_4cell_matrix())], dtype=np.float32)), requires_grad=False, volatile=False).cuda()
+        #m = Variable(torch.from_numpy(
+        #    np.array([[x.tp , x.fp, x.fn] for x in np.squeeze(data.get_4cell_matrix())],
+        #             dtype=np.float32)), requires_grad=False, volatile=False).cuda()
+        #trX, trY = as_variables(data.get_train_set(), volatile=False)
+        #vaX, vaY = as_variables(data.get_validation_set())
+        trX, trY = as_variables(data.get_devel_set(), volatile=False)
         teX, teY = as_variables(data.get_test_set())
 
         nD, nF = trX.size()
         nC = 1
         print("nD={}, nF={}".format(nD,nF))
 
-        model = AlphaNet(input_size=nF, num_classes=nC, num_documents=nD, X=trX, hidden=hidden).cuda()
+        model = TCClassifierNet(input_size=nF, num_classes=nC, hidden=hidden, supervised_statistics=m).cuda()
 
         # Loss and Optimizer (Sigmoid is internally computed.)
         criterion = nn.BCEWithLogitsLoss().cuda()
@@ -190,11 +193,14 @@ if __name__ == '__main__':
         early_stop = EarlyStop(patience=patience)
         for epoch in range(num_epochs):
             trLoss = model.train(trX, trY, optimizer, criterion, batch_size)
-            vaAcc, vaLoss = model.test(vaX, vaY, criterion, batch_size)
+            #vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
+            #fscore = f1(single_metric_statistics(vaY.data.cpu().numpy(), vaY_))
 
-            print ('Epoch: [%d/%d], Loss: %.8f [valAcc: %.3f %%, valLoss: %.8f ]' % (epoch + 1, num_epochs, trLoss, vaAcc, vaLoss))
+            #print ('Epoch: [%d/%d], Loss: %.8f [valLoss: %.8f valF1: %.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore))
+            print ('Epoch: [%d/%d], Loss: %.8f' % (epoch + 1, num_epochs, trLoss))
 
-            if early_stop.check(vaLoss):
+            #if early_stop.check(vaLoss):
+            if early_stop.check(trLoss):
                 print("Early stop after %d steps without any improvement in the validation set" % patience)
                 break
             else: #shuffle
@@ -203,17 +209,11 @@ if __name__ == '__main__':
                 trY = trY[perm]
 
         # Test the Model
-        teAcc = model.test(teX,teY,batch_size=batch_size)
-        print('Test Accuracy : %.3f %%' % teAcc)
-
-        trX, trY = as_variables(data.get_devel_set())
-        trX = F.normalize(trX.data.cpu() * model.getalpha().cpu(), p=2, dim=1).numpy()
-        teX = F.normalize(teX.data.cpu() * model.getalpha().cpu(), p=2, dim=1).numpy()
-        trY = trY.data.cpu().numpy()
-        teY = teY.data.cpu().numpy()
-
-        fscore, tp, tn, fp, fn = train_test_svm(trX, trY, teX, teY)
-        results.add_row(dataset=args.dataset, category=args.category, method=tf_mode+AlphaNet.method_name(), run=args.run, f1=fscore, tp=tp, tn=tn, fp=fp, fn=fn)
+        teY_ = model.test(teX,teY,batch_size=batch_size)
+        cell = single_metric_statistics(teY.data.cpu().numpy(), teY_)
+        fscore = f1(cell)
+        print('Test F1: %.3f %%' % fscore)
+        results.add_row(dataset=args.dataset, category=args.category, method=tf_mode + TCClassifierNet.method_name(), run=args.run, f1=fscore, tp=cell.tp, tn=cell.tn, fp=cell.fp, fn=cell.fn)
 
         del trX, teX, trY, teY, model, criterion, optimizer
         gc.collect()
@@ -228,13 +228,3 @@ if __name__ == '__main__':
             teX, teY = data.get_test_set()
             fscore, tp, tn, fp, fn = train_test_svm(trX, trY, teX, teY)
             results.add_row(dataset=args.dataset, category=args.category, method=baseline_name, run=0, f1=fscore, tp=tp, tn=tn, fp=fp, fn=fn)
-
-    # collectgarbage();
-
-    # Save the Model
-    # torch.save(model.state_dict(), 'model.pkl')
-    # print('Checking correlation with information gain...')
-    # alpha = model.alpha.data.cpu().numpy()
-    # feat_corr_info = data.get_tsr_matrix(information_gain)
-    # plt.plot(alpha, feat_corr_info, 'ro')
-    # plt.show()

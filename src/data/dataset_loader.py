@@ -108,7 +108,7 @@ class TextCollectionLoader:
         if self.positive_cat is None: return
         cat_name=self.devel.target_names[self.positive_cat]
         nC = len(self.valid_catcodes[self.name])
-        self.sout("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat,nC))
+        self.__sout("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat, nC))
         self.devel.target = self.devel.target[:, self.positive_cat:self.positive_cat+1]
         self.test.target = self.test.target[:, self.positive_cat:self.positive_cat+1]
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
@@ -126,7 +126,7 @@ class TextCollectionLoader:
         if feat_sel >= nF:
             print "Warning: number of features to select is greater than the actual number of features (ommitted)."
             return
-        self.sout('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
+        self.__sout('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
         #fs = SelectKBest(chi2, k=feat_sel)
         #check if the ranking of features for this setting has already been calculated
         if features_rank_pickle_path is None:
@@ -148,13 +148,22 @@ class TextCollectionLoader:
             if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
             if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
             self.supervised_4cell_matrix = fs.supervised_4cell_matrix
-            self.sout("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
+            self.__sout("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
             pickle.dump(fs._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     def get_4cell_matrix(self):
         if self.supervised_4cell_matrix is None:
             self.supervised_4cell_matrix = get_supervised_matrix(self._devel_coocurrence, self.devel.target)
         return self.supervised_4cell_matrix
+
+    def get_tsr_matrix(self, tsr_function, squeeze_binary=True):
+        _4cell = self.get_4cell_matrix()
+        nC = self.num_categories()
+        tsr = get_tsr_matrix(_4cell, tsr_function)
+        if nC == 1 and squeeze_binary:
+            tsr = tsr.squeeze()
+        return tsr
+
 
     def __prevalence(self, inset):
         return sum(inset)*1.0 / len(inset)
@@ -206,7 +215,7 @@ class TextCollectionLoader:
 
         self.vectorizer_name = ('sublinear_' if self.sublinear_tf else '')+method
 
-        self.sout("Term weighting: %s, took <%ds" % (self.vectorizer_name, (time.time() - tini)+1))
+        self.__sout("Term weighting: %s, took <%ds" % (self.vectorizer_name, (time.time() - tini) + 1))
 
     def get_coocurrence_matrix(self):
         min_df = 1 if self.name == 'reuters21578' else 3 #since reuters contains categories with less than 3 documents
@@ -252,7 +261,7 @@ class TextCollectionLoader:
             self.epoch += 1
         return batch, labels
 
-    def sout(self,msg):
+    def __sout(self, msg):
         if self.verbose:
             print(msg)
 
