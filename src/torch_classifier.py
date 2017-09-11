@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     # ---------------------------------------------------------------------
     for baseline in weight_baselines:
-        baseline_name = tf_mode + baseline
+        baseline_name = tf_mode + baseline if baseline!='l1' else baseline
         if not results.already_calculated(dataset=args.dataset, category=args.category, method=baseline_name):
             print('\tRunning baseline %s'%baseline)
             data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer=baseline, norm='l2' if baseline!='l1' else 'none', positive_cat=args.category, feat_sel=fs,
