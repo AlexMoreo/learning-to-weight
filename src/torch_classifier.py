@@ -43,11 +43,13 @@ class Classifier_Results_Local(AB_Results):
 
 # Model
 class TCClassifierNet(nn.Module):
-    def __init__(self, input_size, num_classes, hidden=1000, drop_p=0.2, supervised_statistics=None):
+    def __init__(self, input_size, num_classes, drop_p=0.25, supervised_statistics=None):
         super(TCClassifierNet, self).__init__()
-        self.linear1 = nn.Linear(input_size, hidden, bias=True)
-        self.linear2 = nn.Linear(hidden, hidden, bias=True)
-        self.linear3 = nn.Linear(hidden, num_classes, bias=True)
+        #self.linear1 = nn.Linear(input_size, num_classes, bias=True)
+        self.linear1 = nn.Linear(input_size, 512, bias=True)
+        #self.linear2 = nn.Linear(512, num_classes, bias=True)
+        self.linear2 = nn.Linear(512, 256, bias=True)
+        self.linear3 = nn.Linear(256, num_classes, bias=True)
         self.training = False
         self.drop_p = drop_p
         self.supervised_statistics = supervised_statistics
@@ -56,7 +58,17 @@ class TCClassifierNet(nn.Module):
             self.sup_linear1 = nn.Linear(info_by_feat+1, 100)
             self.sup_linear2 = nn.Linear(100, 1)
 
-    def forward(self, x):
+    def supervised_weighting_numpy(self, X, batch_size=50):
+        nD,nF = X.size()
+        num_batches = nD // batch_size
+        if nD % batch_size: num_batches += 1
+        XW = np.zeros((nD,nF))
+        for k in range(num_batches):
+            start, end = k * batch_size, (k + 1) * batch_size
+            XW[start:end] = self.supervised_weighting(X[start:end]).data.cpu().numpy()
+        return XW
+
+    def supervised_weighting(self, x):
         if self.supervised_statistics is not None:
             nD,nF = x.size()
             xflat = x.view(nD*nF,1)
@@ -64,10 +76,15 @@ class TCClassifierNet(nn.Module):
             x_feat = torch.cat([xflat,sfeat],1)
             x_h = self.sup_linear1(x_feat)
             x_h = F.relu(x_h)
-            x_o = self.sup_linear2(x_h).view(nD,nF) # x should be 0 if the original input is 0 <-----------------
+            x_o = self.sup_linear2(x_h).view(nD,nF)
+            #x_o = F.sigmoid(x_o)
             x_ones = torch.gt(x,0.0).type(torch.FloatTensor).cuda()
             x = x_o * x_ones
-        x = self.linear1(x)
+        return x
+
+    def forward(self, x):
+        self.weighted_documents = self.supervised_weighting(x)
+        x = self.linear1(self.weighted_documents)
         x = F.relu(x)
         x = F.dropout(x, self.drop_p, self.training)
         x = self.linear2(x)
@@ -115,23 +132,29 @@ class TCClassifierNet(nn.Module):
 
     @staticmethod
     def method_name():
-        return 'TorchClassifier'
+        return 'TorchClassifier2'
 
 class EarlyStop:
     def __init__(self, patience=5):
         self.best_loss = None
         self.patience = patience
         self.my_patience = patience
+        self.has_improved = False
 
     def check(self, valid_loss):
         if self.best_loss is None:
             self.best_loss = valid_loss
+            self.has_improved = True
         elif valid_loss < self.best_loss:
             self.best_loss = valid_loss
             self.my_patience = self.patience
+            self.has_improved = True
         else:
             self.my_patience -= 1
+            self.has_improved = False
         return self.my_patience == 0
+
+
 
 
 def as_variables(Xy, volatile=True):
@@ -151,11 +174,13 @@ if __name__ == '__main__':
     parser.add_argument("--force", help="forces to compute the result if already calculated", default=False, action="store_true")
     parser.add_argument("--run", help="run of the experiment", default=0, type=int)
     parser.add_argument("--feat_info", help="use supervised feature statistics", default=False, action="store_true")
+    parser.add_argument("-m", "--modelpath", help="path to contain the model parameters", type=str, default="../model/TorchClassif.params.dat")
     args = parser.parse_args()
 
-    num_epochs = 1000
-    hidden = 1024
-    learning_rate = 0.01
+
+    num_epochs = 100
+    #hidden = 1024
+    learning_rate = 0.001
     batch_size = 64
     patience = 5
     fs = args.fs
@@ -170,40 +195,42 @@ if __name__ == '__main__':
 
     method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
     if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
         nD = data.num_devel_documents()
         m = None
         if args.feat_info:
             m = Variable(torch.from_numpy(np.array(
-                [[x.tp * 1. / nD, x.fp * 1. / nD, x.fn * 1. / nD] for x in np.squeeze(data.get_4cell_matrix())],
+                [[x.tpr(), x.fpr()] for x in np.squeeze(data.get_4cell_matrix())],
                 dtype=np.float32)), requires_grad=False, volatile=False).cuda()
-        #trX, trY = as_variables(data.get_train_set(), volatile=False)
-        #vaX, vaY = as_variables(data.get_validation_set())
-        trX, trY = as_variables(data.get_devel_set(), volatile=False)
+        trX, trY = as_variables(data.get_train_set(), volatile=False)
+        vaX, vaY = as_variables(data.get_validation_set())
+        #trX, trY = as_variables(data.get_devel_set(), volatile=False)
         teX, teY = as_variables(data.get_test_set())
 
         nD, nF = trX.size()
         nC = 1
         print("nD={}, nF={}".format(nD,nF))
 
-        model = TCClassifierNet(input_size=nF, num_classes=nC, hidden=hidden, supervised_statistics=m).cuda()
+        model = TCClassifierNet(input_size=nF, num_classes=nC, supervised_statistics=m).cuda()
 
         # Loss and Optimizer (Sigmoid is internally computed.)
         criterion = nn.BCEWithLogitsLoss().cuda()
-        optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
         # Training the Model
         early_stop = EarlyStop(patience=patience)
         for epoch in range(num_epochs):
             trLoss = model.train(trX, trY, optimizer, criterion, batch_size)
-            #vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
-            #fscore = f1(single_metric_statistics(vaY.data.cpu().numpy(), vaY_))
+            vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
+            fscore_val = f1(single_metric_statistics(vaY.data.cpu().numpy(), vaY_))
 
             #print ('Epoch: [%d/%d], Loss: %.8f [valLoss: %.8f valF1: %.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore))
-            print ('Epoch: [%d/%d], Loss: %.8f' % (epoch + 1, num_epochs, trLoss))
 
-            #if early_stop.check(vaLoss):
-            if early_stop.check(trLoss):
+            teY_, teLoss = model.test(teX, teY, criterion, batch_size)
+            fscore_test = f1(single_metric_statistics(teY.data.cpu().numpy(), teY_))
+            print ('Epoch: [%d/%d], Loss: %.8f [vaLoss=%.8f vaF1=%.4f teF1=%.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore_val, fscore_test))
+
+            if early_stop.check(vaLoss):
                 print("Early stop after %d steps without any improvement in the validation set" % patience)
                 break
             else: #shuffle
@@ -211,12 +238,26 @@ if __name__ == '__main__':
                 trX = trX[perm]
                 trY = trY[perm]
 
+            if early_stop.has_improved:
+                torch.save(model.state_dict(), args.modelpath)
+
+
         # Test the Model
+        model.load_state_dict(torch.load(args.modelpath))
         teY_ = model.test(teX,teY,batch_size=batch_size)
         cell = single_metric_statistics(teY.data.cpu().numpy(), teY_)
         fscore = f1(cell)
         print('Test F1: %.3f %%' % fscore)
         results.add_row(dataset=args.dataset, category=args.category, method=method_name, run=args.run, f1=fscore, tp=cell.tp, tn=cell.tn, fp=cell.fp, fn=cell.fn)
+
+        trX, trY = as_variables(data.get_devel_set())
+        trX = model.supervised_weighting_numpy(trX)
+        teX = model.supervised_weighting_numpy(teX)
+        trY = trY.data.cpu().numpy()
+        teY = teY.data.cpu().numpy()
+        fscore, tp, tn, fp, fn = train_test_svm(trX, trY, teX, teY)
+        results.add_row(dataset=args.dataset, category=args.category, method=method_name+"_SVM",
+                        run=args.run, f1=fscore, tp=tp, tn=tn, fp=fp, fn=fn)
 
         del trX, teX, trY, teY, model, criterion, optimizer
         gc.collect()

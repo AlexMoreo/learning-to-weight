@@ -26,7 +26,7 @@ class TextCollectionLoader:
     valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed', 'ohsumed20k']#, 'movie_reviews', 'sentence_polarity', 'imdb']
     supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
     unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
-    valid_norms = ['none','l1','l2']
+    valid_norms = ['none','l1','l2', None]
     valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
     valid_repmodes = ['sparse', 'dense']
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
