@@ -132,20 +132,22 @@ class TCClassifierNet(nn.Module):
 
     @staticmethod
     def method_name():
-        return 'TorchClassifier2'
+        return 'TorchClassifier3'
 
 class EarlyStop:
-    def __init__(self, patience=5):
+    def __init__(self, patience=5, low_is_better=True):
         self.best_loss = None
         self.patience = patience
         self.my_patience = patience
         self.has_improved = False
+        self.low_is_better = low_is_better
 
     def check(self, valid_loss):
         if self.best_loss is None:
             self.best_loss = valid_loss
             self.has_improved = True
-        elif valid_loss < self.best_loss:
+        elif (self.low_is_better and valid_loss < self.best_loss) or \
+                (not self.low_is_better and valid_loss > self.best_loss):
             self.best_loss = valid_loss
             self.my_patience = self.patience
             self.has_improved = True
@@ -181,7 +183,7 @@ if __name__ == '__main__':
     num_epochs = 100
     #hidden = 1024
     learning_rate = 0.001
-    batch_size = 64
+    batch_size = 128
     patience = 5
     fs = args.fs
     dataset = args.dataset
@@ -195,7 +197,7 @@ if __name__ == '__main__':
 
     method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
     if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='l1', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False)
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tfidf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=True)
         nD = data.num_devel_documents()
         m = None
         if args.feat_info:
@@ -218,7 +220,7 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
 
         # Training the Model
-        early_stop = EarlyStop(patience=patience)
+        early_stop = EarlyStop(patience=patience, low_is_better=False)
         for epoch in range(num_epochs):
             trLoss = model.train(trX, trY, optimizer, criterion, batch_size)
             vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
@@ -230,7 +232,7 @@ if __name__ == '__main__':
             fscore_test = f1(single_metric_statistics(teY.data.cpu().numpy(), teY_))
             print ('Epoch: [%d/%d], Loss: %.8f [vaLoss=%.8f vaF1=%.4f teF1=%.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore_val, fscore_test))
 
-            if early_stop.check(vaLoss):
+            if early_stop.check(fscore_val):
                 print("Early stop after %d steps without any improvement in the validation set" % patience)
                 break
             else: #shuffle
