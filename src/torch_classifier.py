@@ -6,6 +6,7 @@ from torch.autograd import Variable
 from torch.nn.parameter import Parameter
 import numpy as np
 import sys
+import random
 from data.dataset_loader import TextCollectionLoader
 from feature_selection.tsr_function import *
 import matplotlib.pyplot as plt
@@ -28,7 +29,6 @@ def train_test_svm(Xtr, ytr, Xte, yte):
     model = LinearSVC()
     model_tunning = GridSearchCV(model, param_grid=parameters,
                                  scoring=make_scorer(macroF1), error_score=0, refit=True, cv=5, n_jobs=-1)
-
     tunned = model_tunning.fit(Xtr, ytr)
     print(tunned.best_params_)
     yte_ = tunned.predict(Xte)
@@ -46,17 +46,19 @@ class TCClassifierNet(nn.Module):
     def __init__(self, input_size, num_classes, drop_p=0.25, supervised_statistics=None):
         super(TCClassifierNet, self).__init__()
         #self.linear1 = nn.Linear(input_size, num_classes, bias=True)
-        self.linear1 = nn.Linear(input_size, 512, bias=True)
         #self.linear2 = nn.Linear(512, num_classes, bias=True)
-        self.linear2 = nn.Linear(512, 256, bias=True)
-        self.linear3 = nn.Linear(256, num_classes, bias=True)
+        self.linear1 = nn.Linear(input_size, input_size/2)
+        self.linear2 = nn.Linear(input_size/2, input_size/4)
+        self.linear3 = nn.Linear(input_size/4, input_size/8)
+        self.linear4 = nn.Linear(input_size/8, num_classes)
         self.training = False
         self.drop_p = drop_p
         self.supervised_statistics = supervised_statistics
         if self.supervised_statistics is not None:
             info_by_feat = self.supervised_statistics.size() [1]
-            self.sup_linear1 = nn.Linear(info_by_feat+1, 100)
-            self.sup_linear2 = nn.Linear(100, 1)
+            self.sup_linear1 = nn.Linear(info_by_feat+1, 1)
+            # self.sup_linear2 = nn.Linear(100, 1)
+            # self.sup_linear3 = nn.Linear(50, 1)
 
     def supervised_weighting_numpy(self, X, batch_size=50):
         nD,nF = X.size()
@@ -75,11 +77,15 @@ class TCClassifierNet(nn.Module):
             sfeat = self.supervised_statistics.repeat(nD, 1)
             x_feat = torch.cat([xflat,sfeat],1)
             x_h = self.sup_linear1(x_feat)
-            x_h = F.relu(x_h)
-            x_o = self.sup_linear2(x_h).view(nD,nF)
-            #x_o = F.sigmoid(x_o)
+            # x_h = F.relu(x_h)
+            # x_h = F.dropout(x_h, self.drop_p, self.training)
+            # x_h = self.sup_linear2(x_h)
+            # x_h = F.relu(x_h)
+            # x_h = F.dropout(x_h, self.drop_p, self.training)
+            # x_h = self.sup_linear3(x_h)
+            x_h = x_h.view(nD,nF)
             x_ones = torch.gt(x,0.0).type(torch.FloatTensor).cuda()
-            x = x_o * x_ones
+            x = x_h * x_ones
         return x
 
     def forward(self, x):
@@ -91,6 +97,9 @@ class TCClassifierNet(nn.Module):
         x = F.relu(x)
         x = F.dropout(x, self.drop_p, self.training)
         x = self.linear3(x)
+        x = F.relu(x)
+        x = F.dropout(x, self.drop_p, self.training)
+        x = self.linear4(x)
         return torch.squeeze(x)
 
     def train(self, X, y, optimizer, criterion, batch_size=50):
@@ -132,7 +141,7 @@ class TCClassifierNet(nn.Module):
 
     @staticmethod
     def method_name():
-        return 'TorchClassifier3'
+        return 'Torch4'
 
 class EarlyStop:
     def __init__(self, patience=5, low_is_better=True):
@@ -156,15 +165,14 @@ class EarlyStop:
             self.has_improved = False
         return self.my_patience == 0
 
-
-
-
 def as_variables(Xy, volatile=True):
     X,y=Xy
     X = Variable(torch.from_numpy(X.astype(float)).float(), requires_grad=False, volatile=volatile).cuda()
     y = Variable(torch.from_numpy(np.squeeze(y).astype(float)).float(), requires_grad=False, volatile=volatile).cuda()
     return X,y
 
+
+#-----------------------------------------------------------------------------------------------------------------------
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--dataset", help="indicates the dataset on which to run the baselines benchmark",
@@ -181,10 +189,9 @@ if __name__ == '__main__':
 
 
     num_epochs = 100
-    #hidden = 1024
-    learning_rate = 0.001
+    learning_rate = 0.01
     batch_size = 128
-    patience = 5
+    patience = 10
     fs = args.fs
     dataset = args.dataset
     weight_baselines = ['tfidf', 'tfchi2', 'tfig', 'tf', 'binary', 'tfrf', 'l1']
@@ -194,24 +201,28 @@ if __name__ == '__main__':
     results = Classifier_Results_Local(args.resultfile, autoflush=True, verbose=True)
 
     print("Running %s:%d" % (dataset, args.category))
+    random_seeds=[123456789,234567891,345678912,456789123,567891234,567891234,678912345,789123456,891234567,912345678]
+    random_seed = random_seeds[args.run] if args.run != -1 else random.randint(0,100000)
 
     method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
     if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tfidf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=True)
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False, random_state=random_seed)
         nD = data.num_devel_documents()
         m = None
         if args.feat_info:
             m = Variable(torch.from_numpy(np.array(
-                [[x.tpr(), x.fpr()] for x in np.squeeze(data.get_4cell_matrix())],
+                [[x.tpr(), x.fpr(),
+                  x.p_f(), x.p_tp(), x.p_fp(), x.p_tn(), x.p_fn(),
+                  information_gain(x), idf(x), relevance_frequency(x), gss(x), conf_weight(x), pointwise_mutual_information(x), chi_square(x)
+                  ] for x in np.squeeze(data.get_4cell_matrix())],
                 dtype=np.float32)), requires_grad=False, volatile=False).cuda()
         trX, trY = as_variables(data.get_train_set(), volatile=False)
         vaX, vaY = as_variables(data.get_validation_set())
-        #trX, trY = as_variables(data.get_devel_set(), volatile=False)
         teX, teY = as_variables(data.get_test_set())
 
         nD, nF = trX.size()
         nC = 1
-        print("nD={}, nF={}".format(nD,nF))
+        print("nD={}, nF={}, pC={}".format(nD,nF,data.train_class_prevalence(0)))
 
         model = TCClassifierNet(input_size=nF, num_classes=nC, supervised_statistics=m).cuda()
 
@@ -225,8 +236,6 @@ if __name__ == '__main__':
             trLoss = model.train(trX, trY, optimizer, criterion, batch_size)
             vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
             fscore_val = f1(single_metric_statistics(vaY.data.cpu().numpy(), vaY_))
-
-            #print ('Epoch: [%d/%d], Loss: %.8f [valLoss: %.8f valF1: %.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore))
 
             teY_, teLoss = model.test(teX, teY, criterion, batch_size)
             fscore_test = f1(single_metric_statistics(teY.data.cpu().numpy(), teY_))
@@ -242,7 +251,6 @@ if __name__ == '__main__':
 
             if early_stop.has_improved:
                 torch.save(model.state_dict(), args.modelpath)
-
 
         # Test the Model
         model.load_state_dict(torch.load(args.modelpath))
@@ -264,7 +272,7 @@ if __name__ == '__main__':
         del trX, teX, trY, teY, model, criterion, optimizer
         gc.collect()
 
-    # ---------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------------
     for baseline in weight_baselines:
         baseline_name = tf_mode + baseline if baseline!='l1' else baseline
         if not results.already_calculated(dataset=args.dataset, category=args.category, method=baseline_name):

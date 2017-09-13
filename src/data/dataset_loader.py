@@ -33,7 +33,7 @@ class TextCollectionLoader:
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'ohsumed20k':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
 
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
-                 sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False, norm='l2'):
+                 sublinear_tf=False, global_policy="max", tsr_function=information_gain, verbose=False, norm='l2', random_state=42):
         err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
@@ -48,6 +48,7 @@ class TextCollectionLoader:
         self.verbose = verbose
         self.supervised_4cell_matrix=None
         self.norm=norm
+        self.random_state = random_state
 
         self.fetch_dataset(dataset)
         self.get_coocurrence_matrix()
@@ -64,7 +65,7 @@ class TextCollectionLoader:
         self._devel_indexes = self._get_doc_indexes(self._devel_vec)
         self.test_indexes = self._get_doc_indexes(self._test_vec)
         self._train_indexes, self._valid_indexes, _, _ = \
-            train_test_split(self._devel_indexes, self.devel.target[self._devel_indexes], test_size=valid_proportion, random_state=42)
+            train_test_split(self._devel_indexes, self.devel.target[self._devel_indexes], test_size=valid_proportion, random_state=self.random_state)
 
     def fetch_dataset(self, dataset):
         self.data_path = os.path.join(get_data_home(), dataset)
