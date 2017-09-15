@@ -43,22 +43,28 @@ class Classifier_Results_Local(AB_Results):
 
 # Model
 class TCClassifierNet(nn.Module):
-    def __init__(self, input_size, num_classes, drop_p=0.25, supervised_statistics=None):
+    def __init__(self, input_size, hidden_sizes, drop_p=0.25, supervised_statistics=None):
         super(TCClassifierNet, self).__init__()
-        #self.linear1 = nn.Linear(input_size, num_classes, bias=True)
-        #self.linear2 = nn.Linear(512, num_classes, bias=True)
-        self.linear1 = nn.Linear(input_size, input_size/2)
-        self.linear2 = nn.Linear(input_size/2, input_size/4)
-        self.linear3 = nn.Linear(input_size/4, input_size/8)
-        self.linear4 = nn.Linear(input_size/8, num_classes)
+        if isinstance(hidden_sizes,int):
+            hidden_sizes=[hidden_sizes]
+        layer_sizes = [input_size] + hidden_sizes + [1]
+        # self.trulayer = nn.Linear(input_size, 1)
+        #module list is not working... I don't know why
+        #self.linear = nn.ModuleList([nn.Linear(int(layer_sizes[i]), int(layer_sizes[i+1])) for i in range(len(layer_sizes)-1)])
+        self.linear = nn.ModuleList(
+            [nn.Linear(layer_sizes[i], layer_sizes[i + 1]) for i in range(len(layer_sizes) - 1)])
+        # self.layernorm = LayerNorm(input_size)
+        self.layernorms = nn.ModuleList([LayerNorm(h) for h in hidden_sizes])
         self.training = False
         self.drop_p = drop_p
         self.supervised_statistics = supervised_statistics
         if self.supervised_statistics is not None:
             info_by_feat = self.supervised_statistics.size() [1]
-            self.sup_linear1 = nn.Linear(info_by_feat+1, 1)
+            self.sup_linear1 = nn.Linear(info_by_feat, 1)
+            # self.sup_linear1 = nn.Linear(info_by_feat+1, 100)
             # self.sup_linear2 = nn.Linear(100, 1)
             # self.sup_linear3 = nn.Linear(50, 1)
+            # self.sup_layernorm = LayerNorm(100)
 
     def supervised_weighting_numpy(self, X, batch_size=50):
         nD,nF = X.size()
@@ -67,7 +73,7 @@ class TCClassifierNet(nn.Module):
         XW = np.zeros((nD,nF))
         for k in range(num_batches):
             start, end = k * batch_size, (k + 1) * batch_size
-            XW[start:end] = self.supervised_weighting(X[start:end]).data.cpu().numpy()
+            XW[start:end] = self.supervised_weighting_idf(X[start:end]).data.cpu().numpy()
         return XW
 
     def supervised_weighting(self, x):
@@ -77,29 +83,35 @@ class TCClassifierNet(nn.Module):
             sfeat = self.supervised_statistics.repeat(nD, 1)
             x_feat = torch.cat([xflat,sfeat],1)
             x_h = self.sup_linear1(x_feat)
-            # x_h = F.relu(x_h)
+            x_h = F.relu(x_h)
+            x_h = self.sup_layernorm(x_h)
             # x_h = F.dropout(x_h, self.drop_p, self.training)
-            # x_h = self.sup_linear2(x_h)
+            x_h = self.sup_linear2(x_h)
             # x_h = F.relu(x_h)
             # x_h = F.dropout(x_h, self.drop_p, self.training)
             # x_h = self.sup_linear3(x_h)
             x_h = x_h.view(nD,nF)
             x_ones = torch.gt(x,0.0).type(torch.FloatTensor).cuda()
             x = x_h * x_ones
+            x = self.layernorm(x)
+        return x
+
+    def supervised_weighting_idf(self, x):
+        if self.supervised_statistics is not None:
+            idf_like = self.sup_linear1(self.supervised_statistics).view(1,nF)
+            x = x * idf_like
+            #x = self.layernorm(x)
+        x = F.normalize(x, p=2, dim=1)
         return x
 
     def forward(self, x):
-        self.weighted_documents = self.supervised_weighting(x)
-        x = self.linear1(self.weighted_documents)
-        x = F.relu(x)
-        x = F.dropout(x, self.drop_p, self.training)
-        x = self.linear2(x)
-        x = F.relu(x)
-        x = F.dropout(x, self.drop_p, self.training)
-        x = self.linear3(x)
-        x = F.relu(x)
-        x = F.dropout(x, self.drop_p, self.training)
-        x = self.linear4(x)
+        x = self.supervised_weighting_idf(x)
+        for i in range(len(self.linear)):
+             x = self.linear[i](x)
+             if i < len(self.linear)-1:
+                 x = F.relu(x)
+                 x = self.layernorms[i](x)
+                 x = F.dropout(x, self.drop_p, self.training)
         return torch.squeeze(x)
 
     def train(self, X, y, optimizer, criterion, batch_size=50):
@@ -141,28 +153,63 @@ class TCClassifierNet(nn.Module):
 
     @staticmethod
     def method_name():
-        return 'Torch4'
+        return 'Torch5'
+
+    # def cuda(self, device_id=None):
+    #     super(TCClassifierNet, self).cuda()
+    #     [l.cuda() for l in self.linear]
+    #     [l.cuda() for l in self.layernorms]
+    #     return self
+
+#-----------------------------------------------------------------------------------------------------------------------
+class LayerNorm(nn.Module):
+    def __init__(self, features, eps=1e-6):
+        super(LayerNorm, self).__init__()
+        self.gamma = nn.Parameter(torch.ones(features))
+        self.beta = nn.Parameter(torch.zeros(features))
+        self.eps = eps
+
+    def forward(self, x):
+        mean = x.mean(-1, keepdim=True)
+        std = x.std(-1, keepdim=True)
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
 
 class EarlyStop:
-    def __init__(self, patience=5, low_is_better=True):
+    def __init__(self, patience=5):
         self.best_loss = None
         self.patience = patience
         self.my_patience = patience
         self.has_improved = False
-        self.low_is_better = low_is_better
 
-    def check(self, valid_loss):
-        if self.best_loss is None:
-            self.best_loss = valid_loss
-            self.has_improved = True
-        elif (self.low_is_better and valid_loss < self.best_loss) or \
-                (not self.low_is_better and valid_loss > self.best_loss):
-            self.best_loss = valid_loss
-            self.my_patience = self.patience
-            self.has_improved = True
+    def __compare(self, perf_measure, previous, low_is_better):
+        if perf_measure == previous: return 0
+        if low_is_better:
+            return 1 if perf_measure < previous else -1
         else:
-            self.my_patience -= 1
-            self.has_improved = False
+            return 1 if perf_measure > previous else -1
+
+    # allows to check for more than one measures, e.g.: perf_measures[.5, .75] and low_is_better=[True, False] with
+    # precedent best_loss = [.5, .6] updates the internal state and restores patience
+    def check(self, perf_measures, low_is_better=True):
+        if self.best_loss is None:
+            self.best_loss = perf_measures
+            self.has_improved = True
+        elif isinstance(perf_measures, list):
+            for i in range(len(perf_measures)):
+                cmp = self.__compare(perf_measures[i], self.best_loss[i], low_is_better[i])
+                if cmp == 1:
+                    self.best_loss[i] = perf_measures[i]
+                    self.best_loss[i+1:] = [perf_measures[j] if self.__compare(perf_measures[j], self.best_loss[j], low_is_better[j]) == 1 else self.best_loss[j] for j in range(i+1, len(perf_measures))]
+                    self.my_patience = self.patience
+                    self.has_improved = True
+                    break
+                elif cmp == 0: continue
+                elif cmp == -1: break
+            if cmp <= 0:
+                self.my_patience -= 1
+                self.has_improved = False
+        else:
+            return self.check([perf_measures],[low_is_better])
         return self.my_patience == 0
 
 def as_variables(Xy, volatile=True):
@@ -188,10 +235,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    num_epochs = 100
-    learning_rate = 0.01
+    num_epochs = 25
+    learning_rate = .1
     batch_size = 128
-    patience = 10
+    patience = 30
     fs = args.fs
     dataset = args.dataset
     weight_baselines = ['tfidf', 'tfchi2', 'tfig', 'tf', 'binary', 'tfrf', 'l1']
@@ -205,8 +252,9 @@ if __name__ == '__main__':
     random_seed = random_seeds[args.run] if args.run != -1 else random.randint(0,100000)
 
     method_name = TCClassifierNet.method_name() + ('_STW' if args.feat_info else '')
+    val_test_f1 = []
     if args.force or not results.already_calculated(dataset=args.dataset, category=args.category, method=method_name, run=args.run):
-        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=False, random_state=random_seed)
+        data = TextCollectionLoader(dataset=dataset, rep_mode='dense', vectorizer='tf', norm='none', positive_cat=args.category, feat_sel=fs, sublinear_tf=True, random_state=random_seed)
         nD = data.num_devel_documents()
         m = None
         if args.feat_info:
@@ -224,14 +272,15 @@ if __name__ == '__main__':
         nC = 1
         print("nD={}, nF={}, pC={}".format(nD,nF,data.train_class_prevalence(0)))
 
-        model = TCClassifierNet(input_size=nF, num_classes=nC, supervised_statistics=m).cuda()
+        model = TCClassifierNet(input_size=nF, hidden_sizes=[nF/2,nF/4,nF/8], supervised_statistics=m, drop_p=.5).cuda()
+
 
         # Loss and Optimizer (Sigmoid is internally computed.)
         criterion = nn.BCEWithLogitsLoss().cuda()
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+        optimizer = torch.optim.Adadelta(model.parameters(), lr=learning_rate)#, weight_decay=1e-4)
 
         # Training the Model
-        early_stop = EarlyStop(patience=patience, low_is_better=False)
+        early_stop = EarlyStop(patience=patience)
         for epoch in range(num_epochs):
             trLoss = model.train(trX, trY, optimizer, criterion, batch_size)
             vaY_, vaLoss = model.test(vaX, vaY, criterion, batch_size)
@@ -239,15 +288,17 @@ if __name__ == '__main__':
 
             teY_, teLoss = model.test(teX, teY, criterion, batch_size)
             fscore_test = f1(single_metric_statistics(teY.data.cpu().numpy(), teY_))
-            print ('Epoch: [%d/%d], Loss: %.8f [vaLoss=%.8f vaF1=%.4f teF1=%.4f]' % (epoch + 1, num_epochs, trLoss, vaLoss, fscore_val, fscore_test))
 
-            if early_stop.check(fscore_val):
+            if early_stop.check([fscore_val, vaLoss], low_is_better=[False, True]):
                 print("Early stop after %d steps without any improvement in the validation set" % patience)
                 break
             else: #shuffle
                 perm = torch.randperm(nD).cuda()
                 trX = trX[perm]
                 trY = trY[perm]
+            print ('Epoch: [%d/%d], Loss: %.8f [vaLoss=%.8f vaF1=%.4f teF1=%.4f] %s' % (
+            epoch + 1, num_epochs, trLoss, vaLoss, fscore_val, fscore_test, ('*' if early_stop.has_improved else '')))
+            val_test_f1.append((fscore_val, fscore_test))
 
             if early_stop.has_improved:
                 torch.save(model.state_dict(), args.modelpath)
@@ -283,3 +334,8 @@ if __name__ == '__main__':
             teX, teY = data.get_test_set()
             fscore, tp, tn, fp, fn = train_test_svm(trX, trY, teX, teY)
             results.add_row(dataset=args.dataset, category=args.category, method=baseline_name, run=0, f1=fscore, tp=tp, tn=tn, fp=fp, fn=fn)
+
+    # print('Checking correlation validation/test F-1:')
+    # v,t=zip(*val_test_f1)
+    # plt.plot(v, t, 'ro')
+    # plt.show()
