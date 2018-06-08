@@ -1,21 +1,23 @@
+from __future__ import print_function
 import argparse
-
-from sklearn.svm import LinearSVC
+from sklearn import svm
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.multiclass import OneVsRestClassifier
-from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import make_scorer
-from utils.metrics import *
-
-# -d reuters21578 -r ../results/baselines_svm.csv -m binary --fs 0.1 --classification binary
-
 from data.dataset_loader import *
-from data.weighted_vectors import WeightedVectors
+from utils.metrics import single_metric_statistics
 from utils.result_table import BaselineResultTable, Learning2Weight_ResultTable
+from data.weighted_vectors import WeightedVectors
+
+# This script performs the training, classification, and evaluation with traditiional term weighting methods
+# and with previously generated vectors. There are high-level functions in sklearn that optimize parameters
+# in a more elegant way, but I needed full control...
+
+#TODO: improve with GridSearchCV or RandomizedSearchCV
+
+n_jobs = -1
 
 def featsel(trX, trY, teX, n_feat):
     print('Selecting top-%d features from %d...'%(n_feat, trX.shape[1]))
@@ -43,7 +45,7 @@ def knn(data, results):
             if best_f1 == 1.0: break
             if pca_components is not None:
                 if fs is not None: continue
-                if data.vectorize=='hashing': continue
+                if data.vectorizer=='hashing': continue
                 if pca_components >= trX.shape[1]: continue
                 print("PCA(%s) from %d dimensions" % (pca_components, trX.shape[1]))
                 pca = PCA(n_components=pca_components)
@@ -100,7 +102,7 @@ def knn(data, results):
         acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
         print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d] took %.3fsec.\n' % (acc, f1, prec, rec, sum(teY_), sum(teY), time.time()-t_ini))
 
-        results.add_result_metric_scores(acc, f1, prec, rec, contingency_table(predictions=teY_, true_labels=teY),
+        results.add_result_scores_binary(acc, f1, single_metric_statistics(predicted_labels=teY_, true_labels=teY),
                                          init_time,
                                          notes=str(best_params))
 
@@ -109,82 +111,107 @@ def knn(data, results):
 
     results.commit()
 
-def fit_model_hyperparameters(data, parameters, model):
-    single_class = data.num_categories() == 1
-    if not single_class:
-        parameters = {'estimator__' + key: parameters[key] for key in parameters.keys()}
-        model = OneVsRestClassifier(model, n_jobs=-1)
-    model_tunning = GridSearchCV(model, param_grid=parameters,
-                                 scoring=make_scorer(macroF1), error_score=0, refit=True, cv=5, n_jobs=-1)
-
-    Xtr, ytr = data.get_devel_set()
-    Xtr.sort_indices()
-    if single_class:
-        ytr = np.squeeze(ytr)
-
-    tunned = model_tunning.fit(Xtr, ytr)
-
-    return tunned
-
-
-def fit_and_test_model(data, parameters, model, results):
-    single_class = data.num_categories() == 1
-    if results.check_if_calculated(classifier=type(model).__name__,
-                                weighting=data.vectorizer_name,
-                                num_features=data.num_features(),
-                                dataset=data.name,
-                                category=data.positive_cat if single_class else -1):
-        print "Skip already calculated experiment."
-        return
-
+def linear_svm(data, results):
+    param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
+    param_loss = ['hinge','squared_hinge']
+    param_dual = [False, True]
+    trX, trY = data.get_train_set()
+    vaX, vaY = data.get_validation_set()
     init_time = time.time()
-    tunned_model = fit_model_hyperparameters(data, parameters, model)
-    tunning_time = time.time() - init_time
-    print("%s: best parameters %s, best score %.3f, took %.3f seconds" %
-          (type(model).__name__, tunned_model.best_params_, tunned_model.best_score_, tunning_time))
+    best_f1 = None
+    for c in param_c:
+        for l in param_loss:
+            for d in param_dual:
+                try:
+                    svm_ = svm.LinearSVC(C=c, loss=l, dual=d).fit(trX, trY)
+                    vaY_ = svm_.predict(vaX)
+                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                    #print('Train SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
+                    if best_f1 is None or f1 > best_f1:
+                        best_f1 = f1
+                        best_params = {'C':c, 'loss':l, 'dual':d}
+                        print('\rTrain SVM (c=%.3f, loss=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end='')
+                except ValueError:
+                    pass #print('Param configuration not supported, skip')
 
-    Xte, yte = data.get_test_set()
-    Xte.sort_indices()
-    yte_ = tunned_model.predict(Xte)
-
-    results.init_row_result(type(model).__name__, data)
+    results.init_row_result('LinearSVM', data)
     if isinstance(data, WeightedVectors):
         results.set_all(data.get_learning_parameters())
 
-    if single_class:
-        result_4cell_table = single_metric_statistics(np.squeeze(yte), yte_)
-        fscore = f1(result_4cell_table)
-        acc = accuracy(result_4cell_table)
-        results.add_result_scores_binary(acc, fscore, result_4cell_table, init_time, notes=tunned_model.best_params_)
-        print("Test scores: %.3f acc, %.3f f1" % (acc, fscore))
+    if best_f1 is not None:
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        svm_ = svm.LinearSVC(C=best_params['C'], loss=best_params['loss'], dual=best_params['dual']).fit(deX, deY)
+        teY_ = svm_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+
+        results.add_result_scores_binary(acc, f1, single_metric_statistics(predicted_labels=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
+
     else:
-        macro_f1 = macroF1(yte, yte_)
-        micro_f1 = microF1(yte, yte_)
-        results.add_result_scores_multiclass(macro_f1, micro_f1, init_time, notes=tunned_model.best_params_)
-        print("Test scores: %.3f macro-f1, %.3f micro-f1" % (macro_f1, micro_f1))
+        results.set('notes', '<not applicable>')
+
     results.commit()
 
-
-def linear_svm(data, results):
-    parameters = {'C': [1e4, 1e3, 1e2, 1e1, 1],
-                  'loss': ['hinge', 'squared_hinge'],
-                  'dual': [True, False]}
-    model = LinearSVC()
-    fit_and_test_model(data, parameters, model, results)
-
-
 def random_forest(data, results):
-    parameters = {'n_estimators': [10, 25, 50, 100],
-                  'criterion': ['gini', 'entropy'],
-                  'max_features': ['sqrt', 'log2', 1000], #The None configuration (all) is extremely slow
-                  'class_weight': ['balanced', 'balanced_subsample', None]
-                 }
-    model = RandomForestClassifier() #check multiclass config
-    fit_and_test_model(data, parameters, model, results)
+    param_n_estimators = [10, 25, 50, 100]
+    param_criterion = ['gini', 'entropy']
+    param_max_features = ['sqrt', 'log2', 1000] #The None configuration (all) is extremely slow
+    param_class_weight = ['balanced', 'balanced_subsample', None]
+    trX, trY = data.get_train_set()
+    vaX, vaY = data.get_validation_set()
+    best_f1 = None
+    init_time = time.time()
+    for n_estimators in param_n_estimators:
+        for criterion in param_criterion:
+            for max_features in param_max_features:
+                for class_weight in param_class_weight:
+                    try:
+                        rf_ = RandomForestClassifier(n_estimators=n_estimators,
+                            criterion=criterion, max_features=max_features, class_weight=class_weight, n_jobs=n_jobs).fit(trX, trY)
+                        vaY_ = rf_.predict(vaX)
+                        _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                        #print('Train Random Forest (n_estimators=%.3f, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                        #      (n_estimators, criterion, max_features, class_weight, f1))
+                        if best_f1 is None or f1 > best_f1:
+                            best_f1 = f1
+                            best_params = {'n_estimators':n_estimators, 'criterion':criterion, 'max_features':max_features, 'class_weight':class_weight}
+                            print('\rTrain Random Forest (n_estimators=%d, criterion=%s, max_features=%s, class_weight=%s) got f-score=%f' % \
+                              (n_estimators, criterion, max_features, class_weight, f1), end='')
+                    except ValueError:
+                        pass #print('Param configuration not supported, skip')
+
+    results.init_row_result('RandomForest', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
+
+    if best_f1 is not None:
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        rf_ = RandomForestClassifier(n_estimators=best_params['n_estimators'],
+                                     criterion=best_params['criterion'],
+                                     max_features=best_params['max_features'],
+                                     class_weight=best_params['class_weight'],
+                                     n_jobs=n_jobs).fit(deX, deY)
+        teY_ = rf_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f\n' % (acc, f1, prec, rec))
+
+        results.add_result_scores_binary(acc, f1, single_metric_statistics(predicted_labels=teY_, true_labels=teY), init_time,
+                                         notes=str(best_params))
+
+    else:
+        results.set('notes', '<not applicable>')
+
+    results.commit()
 
 def multinomial_nb(data, results):
     def swap_vectors_sign(data):
-        if data.vectorize != 'learned': return
+        if data.vectorizer != 'learned': return
         def mainly_negative_nonzeros(csr_m):
             values = np.array(csr_m[csr_m.nonzero()])[0]
             negatives = len(values[values<0])
@@ -208,32 +235,100 @@ def multinomial_nb(data, results):
     #if all vectors are non-positive, swaps their sign -- otherwise the multinomial nb could not be computed.
     swap_vectors_sign(data)
 
-    parameters = {'alpha': [1.0, .1, .05, .01, .001, 0.0]}
-    model = MultinomialNB()  # check multiclass config
-    fit_and_test_model(data, parameters, model, results)
+    param_alpha = [1.0, .1, .05, .01, .001, 0.0]
+    trX, trY = data.get_train_set()
+    vaX, vaY = data.get_validation_set()
+    best_f1 = None
+    init_time = time.time()
+    for alpha in param_alpha:
+        try:
+            nb_ = MultinomialNB(alpha=alpha).fit(trX, trY)
+            vaY_ = nb_.predict(vaX)
+            _, f1, _, _ = evaluation_metrics(predictions=vaY_, true_labels=vaY)
+            print('Train Multinomial (alpha=%.3f) got f-score=%f' % (alpha, f1))
+            if best_f1 is None or f1 > best_f1:
+                best_f1 = f1
+                best_params = {'alpha': alpha}
+        except ValueError:
+            print('Param configuration not supported, skip')
+        except IndexError:
+            print('Param configuration produced index error, skip')
+
+    results.init_row_result('MultinomialNB', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
+
+    if best_f1 is not None:
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        nb_ = MultinomialNB(alpha=best_params['alpha']).fit(deX, deY)
+        teY_ = nb_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f\n' % (acc, f1, prec, rec))
+        results.add_result_scores_binary(acc, f1, single_metric_statistics(predicted_labels=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
+    else:
+        results.set('notes', '<not applicable>')
+    results.commit()
 
 def logistic_regression(data, results):
-    parameters = {'C': [1e4, 1e3, 1e2, 1e1, 1],
-                  'penalty': ['l2','l1'],
-                  'dual': [False, True]}
-    model = LogisticRegression()
-    fit_and_test_model(data, parameters, model, results)
+    param_c = [1e4, 1e3, 1e2, 1e1, 1, 1e-1, 1e-2, 1e-3, 1e-4]
+    param_penalty = ['l2','l1']
+    param_dual = [False, True]
+    trX, trY = data.get_train_set()
+    vaX, vaY = data.get_validation_set()
+    init_time = time.time()
+    best_f1 = None
+    for c in param_c:
+        for l in param_penalty:
+            for d in param_dual:
+                try:
+                    lr_ = LogisticRegression(C=c, penalty=l, dual=d, n_jobs=n_jobs).fit(trX, trY)
+                    vaY_ = lr_.predict(vaX)
+                    _,f1,_,_=evaluation_metrics(predictions=vaY_, true_labels=vaY)
+                    #print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1))
+                    if best_f1 is None or f1 > best_f1:
+                        best_f1 = f1
+                        best_params = {'C':c, 'penalty':l, 'dual':d}
+                        print('Train Logistic Regression (c=%.3f, penalty=%s, dual=%s) got f-score=%f' % (c, l, d, f1), end="")
+                except ValueError:
+                    pass #print('Param configuration not supported, skip')
 
+    results.init_row_result('LogisticRegression', data)
+    if isinstance(data, WeightedVectors):
+        results.set_all(data.get_learning_parameters())
+
+    if best_f1 is not None:
+        print('\nBest params %s: f-score %f' % (str(best_params), best_f1))
+        deX, deY = data.get_devel_set()
+        teX, teY = data.get_test_set()
+        lr_ = LogisticRegression(C=best_params['C'], penalty=best_params['penalty'], dual=best_params['dual']).fit(deX, deY)
+        teY_ = lr_.predict(teX)
+        acc, f1, prec, rec = evaluation_metrics(predictions=teY_, true_labels=teY)
+        print('Test: acc=%.3f, f1=%.3f, p=%.3f, r=%.3f [pos=%d, truepos=%d]\n' % (acc, f1, prec, rec, sum(teY_), sum(teY)))
+
+        results.add_result_scores_binary(acc, f1, single_metric_statistics(predicted_labels=teY_, true_labels=teY),
+                                         init_time,
+                                         notes=str(best_params))
+
+    else:
+        results.set('notes', '<not applicable>')
+
+    results.commit()
 
 def run_benchmark(data, results, benchmarks):
-    print("|Tr|=%d" % data.num_devel_documents())
-    print("|Te|=%d" % data.num_test_documents())
-    print("|C|=%d" % data.num_categories())
     if benchmarks['linearsvm']:
         linear_svm(data, results)
-    #if benchmarks['randomforest']:
-    #    random_forest(data, results)
-    #if benchmarks['logisticregression']:
-    #    logistic_regression(data, results)
-    #if benchmarks['multinomialnb']:
-    #    multinomial_nb(data, results)
-    #if benchmarks['knn']:
-    #    knn(data, results)
+    if benchmarks['randomforest']:
+        random_forest(data, results)
+    if benchmarks['logisticregression']:
+        logistic_regression(data, results)
+    if benchmarks['multinomialnb']:
+        multinomial_nb(data, results)
+    if benchmarks['knn']:
+        knn(data, results)
 
 if __name__ == '__main__':
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
@@ -245,57 +340,46 @@ if __name__ == '__main__':
     parser.add_argument("-m", "--method", help="selects one single vectorizer method to run from "+str(TextCollectionLoader.valid_vectorizers),
                         type=str, default="all")
     parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
-    parser.add_argument("--sublinear_tf", help="logarithmic version of the tf-like function", default=False, action="store_true")
-    parser.add_argument("--global_policy", help="global policy for supervised term weighting approaches in multiclass configuration, max (default), ave, wave (weighted average), or sum", type=str, default='max')
-    parser.add_argument("--classification", help="select the classification mode (binary or multiclass -- default)", type=str, default='multiclass')
     parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
-    #parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
-    #parser.add_argument("--no-randomforest", help="removes the randomforest classifier from the benchmark", default=False, action="store_true")
-    #parser.add_argument("--no-logisticregression", help="removes the logisticregression classifier from the benchmark", default=False, action="store_true")
-    #parser.add_argument("--no-knn", help="removes the knn classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-randomforest", help="removes the randomforest classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-logisticregression", help="removes the logisticregression classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("--no-knn", help="removes the knn classifier from the benchmark", default=False, action="store_true")
     args = parser.parse_args()
 
-    #err_exception(args.dataset and args.vectordir, "Specify only one run mode: runing baselines on a dataset or precalculated vectors.")
-
     benchmarks = dict({'linearsvm': not args.no_linearsvm,
-                       #'multinomialnb': not args.no_multinomialnb,
-                       #'randomforest': not args.no_randomforest,
-                       #'logisticregression': not args.no_logisticregression,
-                       #'knn': not args.no_knn
-                       })
+                       'multinomialnb': not args.no_multinomialnb,
+                       'randomforest': not args.no_randomforest,
+                       'logisticregression': not args.no_logisticregression,
+                       'knn': not args.no_knn})
+
+    print("Loading result file from "+args.resultfile)
 
     if args.dataset:
-        print("Runing classification benchmark on baselines\n"+"-"*80)
-        results = BaselineResultTable(args.resultfile, args.classification)
-        for vectorizer in ([args.method] if args.method != 'all' else TextCollectionLoader.valid_vectorizers):
-            if args.classification == 'binary':
-                for cat in TextCollectionLoader.valid_catcodes[args.dataset]:
-                    data = TextCollectionLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse', feat_sel=args.fs,
-                                                sublinear_tf=args.sublinear_tf, global_policy=args.global_policy,
-                                                positive_cat=cat)
-                    run_benchmark(data, results, benchmarks)
-                    print('-'*80)
-            elif args.classification == 'multiclass':
-                data = TextCollectionLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse',
-                                            feat_sel=args.fs, sublinear_tf=args.sublinear_tf, global_policy=args.global_policy)
-                run_benchmark(data, results, benchmarks)
-            else:
-                raise ValueError('classification param should be either "multiclass" or "binary"')
+        results = BaselineResultTable(args.resultfile, 'binary')
+        print("Runing classification benchmark on baselines")
+        print("Dataset: " + args.dataset)
+        feat_sel = args.fs
+        for vectorizer in ([args.method] if args.method!='all' else TextCollectionLoader.valid_vectorizers):
+            for pos_cat_code in TextCollectionLoader.valid_catcodes[args.dataset]:
+                print('Category %d (%s)' % (pos_cat_code, vectorizer))
+                data = TextCollectionLoader(dataset=args.dataset, vectorizer=vectorizer, rep_mode='sparse', positive_cat=pos_cat_code, feat_sel=feat_sel)
+                print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence(0)))
+                print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence(0)))
+                print("|Te|=%d [prev+ %f]" % (data.num_test_documents(), data.test_class_prevalence(0)))
 
-    elif args.vectordir:
+                run_benchmark(data, results, benchmarks)
+    if args.vectordir:
+        results = Learning2Weight_ResultTable(args.resultfile, 'binary')
         print("Runing classification benchmark on learnt vectors in " + args.vectordir)
         vectors = [pickle for pickle in os.listdir(args.vectordir) if pickle.endswith('.pickle')]
         for i,vecname in enumerate(vectors):
             print("Vector file: " + vecname)
             data = WeightedVectors.unpickle(indir=args.vectordir, infile_name=vecname)
-            classification_mode = "multiclass" if data.num_categories() > 1 else "binary"
-            results = Learning2Weight_ResultTable(args.resultfile, classification_mode)
             run_benchmark(data, results, benchmarks)
             print("Completed %d/%d" % (i,len(vectors)))
             print('-'*80)
 
     print("Done.")
-#some results reuters21578
-#tfgr, sublinear max: MacroF1=0.609 microF1=0.850
-#tfgr, sublinear ave: MacroF1=0.568 microF1=0.850
-#tfgr,           ave: MacroF1=0.601 microF1=0.844
+    results.commit()
+

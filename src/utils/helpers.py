@@ -48,8 +48,9 @@ def shuffle_tied(l1, l2, random_seed=None):
     l1_, l2_ = zip(*l1_l2_tied)
     return list(l1_), list(l2_)
 
-"""
+
 def evaluation_metrics(predictions, true_labels):
+    if len(true_labels.shape)==2: true_labels = true_labels.reshape(-1,1)
     no_test_examples = (sum(true_labels) == 0)
     no_predictions = (sum(predictions) == 0)
     acc = accuracy_score(true_labels, predictions)
@@ -66,7 +67,7 @@ def evaluation_metrics(predictions, true_labels):
     else:
         r = recall_score(true_labels, predictions, average='binary', pos_label=1)
     return acc, f1, p, r
-"""
+
 
 
 

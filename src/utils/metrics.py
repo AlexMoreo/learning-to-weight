@@ -21,12 +21,13 @@ def f1(cell):
 
 #true_labels and predicted_labels are two vectors of shape (number_documents,)
 def single_metric_statistics(true_labels, predicted_labels):
-    tp = sum([1 for x,y in zip(true_labels,predicted_labels) if x==y==1])
+    tp = sum([1 for x, y in zip(true_labels, predicted_labels) if x==y==1])
     fp = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 0 and y == 1])
     fn = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 1 and y == 0])
     tn = sum([1 for x, y in zip(true_labels, predicted_labels) if x == 0 and y == 0])
     if tp+fp+fn+tn != len(true_labels): raise ValueError("Format not consistent between true and predicted labels.")
     return ContTable(tp=tp, tn=tn, fp=fp, fn=fn)
+
 
 # def fscore_with_tensors():
 #     tp = tf.cast(tf.count_nonzero(self.prediction * self.y), tf.float32)

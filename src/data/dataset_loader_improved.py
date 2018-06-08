@@ -1,22 +1,20 @@
 import cPickle as pickle
 import tarfile
-import time
 from glob import glob
-from os import listdir
 from os.path import join
-import nltk
-import numpy as np
-from nltk.corpus import movie_reviews
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.datasets import get_data_home
 from sklearn.externals.six.moves import urllib
-from sklearn.feature_extraction.text import HashingVectorizer, TfidfVectorizer
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.preprocessing import normalize
 from custom_vectorizers import *
+from data.reuters21578_parser import ReutersParser
+from feature_selection.round_robin import RoundRobin, FeatureSelectorFromRank
 from feature_selection.tsr_function import *
 from utils.helpers import *
-from reuters21578_parser import ReutersParser
 
 
 class Dataset:
@@ -25,258 +23,271 @@ class Dataset:
         self.target = target
         self.target_names = target_names
 
-def err_exit(cond, msg):
-    if cond:
-        print(msg)
-        sys.exit()
-
 class TextCollectionLoader:
-    valid_datasets = ['20newsgroups', 'reuters21578', 'ohsumed', 'movie_reviews', 'sentence_polarity', 'imdb']
-    valid_vectorizers = ['tfcw', 'tfgr', 'tfidf', 'count', 'binary', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfig', 'tfrf', 'bm25']
-    valid_repmodes = ['sparse', 'dense', 'sparse_index']
-    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
-    def __init__(self, dataset, valid_proportion=0.2, vectorizer='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
-        err_param_range('vectorize', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
+
+    valid_datasets = ['reuters21578', '20newsgroups', 'ohsumed', 'ohsumed20k']#, 'movie_reviews', 'sentence_polarity', 'imdb']
+    supervised_tw_methods = ['tfcw', 'tfgr', 'tfchi2', 'tfig', 'tfrf', 'tffs']
+    unsupervised_tw_methods = ['tfidf', 'tf', 'binary', 'bm25', 'l1']
+    valid_norms = ['none','l1','l2', None]
+    valid_vectorizers = unsupervised_tw_methods + supervised_tw_methods
+    valid_repmodes = ['sparse', 'dense']
+    valid_global_policies = ['max', 'ave', 'wave', 'sum']
+    valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'ohsumed20k':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
+
+    def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
+                 sublinear_tf=False, global_policy="max", tsr_function=chi_square, verbose=False, norm='l2', random_state=42):
+        err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
         err_param_range('dataset', dataset, valid_values=TextCollectionLoader.valid_datasets)
-        err_exit(positive_cat is not None and positive_cat not in TextCollectionLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
+        err_param_range('global_policy', global_policy, valid_values=TextCollectionLoader.valid_global_policies)
+        err_param_range('norm', norm, valid_values=TextCollectionLoader.valid_norms)
+        err_exception(positive_cat is not None and positive_cat not in TextCollectionLoader.valid_catcodes[dataset], 'Error. Positive category not in scope.')
         self.name = dataset
         self.vectorizer=vectorizer
-        self.rep_mode=rep_mode
-        self.cat_vec_dic = dict()
-        self.supervised_4cell_matrix = None
-        if dataset == '20newsgroups':
-            self.devel = self.fetch_20newsgroups(subset='train')
-            self.test  = self.fetch_20newsgroups(subset='test')
-            self.classification = 'single-label'
-        elif dataset == 'reuters21578':
-            self.devel = self.fetch_reuters21579(subset='train')
-            self.test  = self.fetch_reuters21579(subset='test')
-            self.classification = 'multi-label'
-        elif dataset == 'ohsumed':
-            self.devel = self.fetch_ohsumed50k(subset='train')
-            self.test = self.fetch_ohsumed50k(subset='test')
-            self.classification = 'multi-label'
-        elif dataset == 'movie_reviews':
-            self.devel = self.fetch_movie_reviews(subset='train')
-            self.test = self.fetch_movie_reviews(subset='test')
-            self.classification = 'polarity'
-        elif dataset == 'sentence_polarity':
-            self.devel = self.fetch_sentence_polarity(subset='train')
-            self.test = self.fetch_sentence_polarity(subset='test')
-            self.classification = 'polarity'
-        elif dataset == 'imdb':
-            self.devel = self.fetch_IMDB(subset='train')
-            self.test = self.fetch_IMDB(subset='test')
-            self.classification = 'polarity'
+        self.positive_cat = positive_cat
+        self.sublinear_tf=sublinear_tf
+        self.global_policy=global_policy
+        self.verbose = verbose
+        self.supervised_4cell_matrix=None
+        self.norm=norm
+        self.random_state = random_state
+
+        self.fetch_dataset(dataset)
+        self.get_coocurrence_matrix()
+        self.binarize_classes()
+        self.feature_selection(feat_sel=feat_sel, score_func=tsr_function)
+        self.term_weighting()
+        self.get_nonempty_indexes(valid_proportion)
+        self.set_representation_mode(rep_mode)
+
         self.epoch = 0
         self.offset = 0
-        self.positive_cat = positive_cat
-        self.devel_vec, self.test_vec = self._vectorize_documents()
-        self.devel_indexes = self._get_doc_indexes(self.devel_vec)
-        self.test_indexes  = self._get_doc_indexes(self.test_vec)
-        if self.rep_mode=='dense':
-            self.devel_vec = self.devel_vec.todense()
-            self.test_vec = self.test_vec.todense()
-            self._batch_getter = self._dense_batch_getter
-        elif self.rep_mode=='sparse':
-            # already sparse representation
-            self._batch_getter = self._sparse_batch_getter
-        else: #sparse index
-            # already sparse representation
-            self._batch_getter = self._sparse_index_batch_getter
-        if self.positive_cat is not None:
-            print('Binarize towards positive category %s' % self.devel.target_names[self.positive_cat])
-            self.binarize_classes()
-            self.divide_train_val_evenly(valid_proportion=valid_proportion)
-        if feat_sel is not None:
-            self.feature_selection(int(feat_sel*self.num_features()))
 
-    # Ensures the train and validation splits to approximately preserve the original devel prevalence.
-    # In extremely imbalanced cases, the train set is guaranteed to have some positive examples
-    def divide_train_val_evenly(self, valid_proportion=0.5, pos_cat_code=1):
-        pos_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] == pos_cat_code]
-        neg_indexes = [ind for ind in self.devel_indexes if self.devel.target[ind] != pos_cat_code]
-        pos_split_point = int(math.ceil(len(pos_indexes)*(1.0-valid_proportion)))
-        neg_split_point = int(math.ceil(len(neg_indexes)*(1.0-valid_proportion)))
-        self.train_indexes = np.array(pos_indexes[:pos_split_point] + neg_indexes[:neg_split_point])
-        self.valid_indexes = np.array(pos_indexes[pos_split_point:] + neg_indexes[neg_split_point:])
+    def get_nonempty_indexes(self, valid_proportion):
+        self._devel_indexes = self._get_doc_indexes(self._devel_vec)
+        self.test_indexes = self._get_doc_indexes(self._test_vec)
+        self._train_indexes, self._valid_indexes, _, _ = \
+            train_test_split(self._devel_indexes, self.devel.target[self._devel_indexes], test_size=valid_proportion, random_state=self.random_state)
+
+    def fetch_dataset(self, dataset):
+        self.data_path = os.path.join(get_data_home(), dataset)
+        if dataset == '20newsgroups':
+            self.devel = self.fetch_20newsgroups(subset='train', data_path=self.data_path)
+            self.test  = self.fetch_20newsgroups(subset='test', data_path=self.data_path)
+            self.classification = 'single-label'
+            self.devel.target = np.expand_dims(self.devel.target, axis=1)
+            self.test.target = np.expand_dims(self.test.target, axis=1)
+        elif dataset == 'reuters21578':
+            self.devel = self.fetch_reuters21579(subset='train', data_path=self.data_path)
+            self.test  = self.fetch_reuters21579(subset='test', data_path=self.data_path)
+            self.classification = 'multi-label'
+        elif dataset == 'ohsumed':
+            self.devel = self.fetch_ohsumed50k(subset='train', data_path=self.data_path)
+            self.test = self.fetch_ohsumed50k(subset='test', data_path=self.data_path)
+            self.classification = 'multi-label'
+        elif dataset == 'ohsumed20k':
+            self.devel = self.fetch_ohsumed20k(subset='train', data_path=self.data_path)
+            self.test = self.fetch_ohsumed20k(subset='test', data_path=self.data_path)
+            self.classification = 'multi-label'
+        # check if the multilabelbinarizer transforms well the binary targets
+        #elif dataset == 'movie_reviews':
+            #self.devel = self.fetch_movie_reviews(subset='train')
+            #self.test = self.fetch_movie_reviews(subset='test')
+            #self.classification = 'polarity'
+            #elif dataset == 'sentence_polarity':
+            #self.devel = self.fetch_sentence_polarity(subset='train')
+            #self.test = self.fetch_sentence_polarity(subset='test')
+            #self.classification = 'polarity'
+            #elif dataset == 'imdb':
+            #self.devel = self.fetch_IMDB(subset='train')
+            #self.test = self.fetch_IMDB(subset='test')
+            #self.classification = 'polarity'
+        mlb = MultiLabelBinarizer()
+        self.devel.target = mlb.fit_transform(self.devel.target)
+        self.test.target = mlb.transform(self.test.target)
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
-        self.devel.target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
-        self.test.target = self.binarize_label_vector(self.test.target, self.classification, self.positive_cat)
+        if self.positive_cat is None: return
+        cat_name=self.devel.target_names[self.positive_cat]
+        nC = len(self.valid_catcodes[self.name])
+        self.__sout("Dataset %s: binary class <%s> %d/%d" % (self.name, cat_name, self.positive_cat, nC))
+        self.devel.target = self.devel.target[:, self.positive_cat:self.positive_cat+1]
+        self.test.target = self.test.target[:, self.positive_cat:self.positive_cat+1]
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
         self.classification = 'binary' #informs that the category codes have been set to 0 for negative and 1 for positive
-        self.cat_vec_dic = dict()
+        #if self.supervised_4cell_matrix != None:
+        #    self.supervised_4cell_matrix = self.supervised_4cell_matrix[self.positive_cat:self.positive_cat+1,:]
 
-    def binarize_label_vector(self, labels, classification_type, pos_code=1):
-        if classification_type in ['single-label']:
-            return np.array([(1 if pos_code == label_code else 0) for label_code in labels])
-        elif classification_type=='multi-label':
-            return np.array([(1 if pos_code in doc_labels else 0) for doc_labels in labels])
-        elif classification_type in ['binary', 'polarity']:
-            return labels #nothing to do
-        else:
-            err_exit(err_msg='Error while binarizing category codes: unexpected classification type.')
-
-    def feature_selection(self, feat_sel):
-        if self.vectorizer == 'hashing':
-            print 'Warning: feature selection ommitted when hashing is activated'
+    def feature_selection(self, feat_sel, score_func=information_gain, features_rank_pickle_path=None):
+        if feat_sel==None: return
+        nD,nF = self._devel_coocurrence.shape
+        nC = self.num_categories()
+        if isinstance(feat_sel, float):
+            if feat_sel <=0.0 or feat_sel>1.0: raise ValueError("Feature selection ratio should be contained in (0,1]")
+            feat_sel = int(feat_sel * nF)
+        if feat_sel >= nF:
+            print "Warning: number of features to select is greater than the actual number of features (ommitted)."
             return
-        if feat_sel is not None and feat_sel < self.devel_vec.shape[1]:
-            print('Selecting %d most important features from %d features' % (feat_sel, self.num_features()))
+        if self.num_categories()==1:
+            self.__sout('Feature selection: sklearn SelectKBest with chi2 (compatibility), select %d/%d features.' % (feat_sel, nF))
             fs = SelectKBest(chi2, k=feat_sel)
-            self.devel_vec = fs.fit_transform(self.devel_vec, self.devel.target)
-            self.test_vec = fs.transform(self.test_vec)
+            self._devel_coocurrence = fs.fit_transform(self._devel_coocurrence, self.devel.target)
+            self._test_coocurrence = fs.transform(self._test_coocurrence)
+        else:
+            self.__sout('Feature selection: round robin, %s, select %d/%d features.' % (score_func.__name__, feat_sel, nF))
 
-    def __prevalence(self, inset, cat_label=1):
-        return sum(1.0 for x in inset if x == cat_label) / len(inset)
+            #check if the ranking of features for this setting has already been calculated
+            if features_rank_pickle_path is None:
+                features_rank_pickle_path = join(self.data_path,
+                                                 'RR_' + score_func.__name__ + '_nF' + str(nF) +'_nD'+str(nD)+'_nC'+str(nC)+
+                                                 '_pos' + str(self.positive_cat) + '_rank.pickle')
+            if os.path.exists(features_rank_pickle_path):
+                features_rank = pickle.load(open(features_rank_pickle_path, 'rb'))
+                fs = FeatureSelectorFromRank(k=feat_sel, features_rank=features_rank)
+                self._devel_coocurrence = fs.fit_transform(self._devel_coocurrence, self.devel.target)
+                self._test_coocurrence = fs.transform(self._test_coocurrence)
+                if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
+                if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
+                self.supervised_4cell_matrix = None
+            else:
+                fs = RoundRobin(score_func=score_func, k=feat_sel)
+                self._devel_coocurrence = fs.fit_transform(self._devel_coocurrence, self.devel.target)
+                self._test_coocurrence = fs.transform(self._test_coocurrence)
+                if hasattr(self, 'devel_vec'): self._devel_vec = fs.transform(self._devel_vec)
+                if hasattr(self, 'test_vec'): self._test_vec = fs.transform(self._test_vec)
+                self.supervised_4cell_matrix = fs.supervised_4cell_matrix
+                self.__sout("Pickling ranked features for faster subsequent runs in %s" % features_rank_pickle_path)
+                pickle.dump(fs._features_rank, open(features_rank_pickle_path, 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
-    def devel_class_prevalence(self, cat_label=1):
-        return self.__prevalence(self.devel.target[self.devel_indexes], cat_label)
+    def get_4cell_matrix(self):
+        if self.supervised_4cell_matrix is None:
+            self.supervised_4cell_matrix = get_supervised_matrix(self._devel_coocurrence, self.devel.target)
+        return self.supervised_4cell_matrix
 
-    def train_class_prevalence(self, cat_label=1):
-        return self.__prevalence(self.devel.target[self.train_indexes], cat_label)
+    def get_tsr_matrix(self, tsr_function, squeeze_binary=True):
+        _4cell = self.get_4cell_matrix()
+        nC = self.num_categories()
+        tsr = get_tsr_matrix(_4cell, tsr_function)
+        if nC == 1 and squeeze_binary:
+            tsr = tsr.squeeze()
+        return tsr
 
-    def valid_class_prevalence(self, cat_label=1):
-        return self.__prevalence(self.devel.target[self.valid_indexes], cat_label)
 
-    def test_class_prevalence(self, cat_label=1):
-        return self.__prevalence(self.test.target[self.test_indexes], cat_label)
+    def __prevalence(self, inset):
+        return sum(inset)*1.0 / len(inset)
 
-    def _vectorize_documents(self):
-        min_df = 1
-        self.weight_getter = self._get_weights #default getter
-        if self.vectorizer == 'hashing':
-            vectorizer = HashingVectorizer(n_features=2**16, stop_words='english', non_negative=True)
-            self.weight_getter = self._get_none
-        elif self.vectorizer == 'tfidf':
-            vectorizer = TfidfVectorizer(stop_words='english', min_df=min_df)
-        elif self.vectorizer == 'sublinear_tfidf':
-            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, min_df=min_df)
-        elif self.vectorizer in ['tfig', 'tfgr', 'tfchi2', 'tfrf', 'tfcw']:
-            binary_target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
-            if self.vectorizer == 'tfig':
-                vectorizer = TftsrVectorizer(binary_target, information_gain, stop_words='english', sublinear_tf=True, min_df=min_df)
-            elif self.vectorizer == 'tfchi2':
-                vectorizer = TftsrVectorizer(binary_target, chi_square, stop_words='english', sublinear_tf=True, min_df=min_df)
-            elif self.vectorizer == 'tfgr':
-                vectorizer = TftsrVectorizer(binary_target, gain_ratio, stop_words='english', sublinear_tf=True, min_df=min_df)
-            elif self.vectorizer == 'tfrf':
-                vectorizer = TftsrVectorizer(binary_target, relevance_frequency, stop_words='english', sublinear_tf=True, min_df=min_df)
-            elif self.vectorizer == 'tfcw':
-                vectorizer = TftsrVectorizer(binary_target, conf_weight, stop_words='english', sublinear_tf=True, min_df=min_df)
-        elif self.vectorizer == 'sublinear_tf':
-            vectorizer = TfidfVectorizer(stop_words='english', sublinear_tf=True, use_idf=False, min_df=min_df)
-        elif self.vectorizer == 'bm25':
-            vectorizer = BM25(stop_words='english', min_df=min_df)
-        elif self.vectorizer == 'count':
-            vectorizer = CountVectorizer(stop_words='english', min_df=min_df)
-        elif self.vectorizer == 'binary':
-            vectorizer = CountVectorizer(stop_words='english', binary=True, min_df=min_df)
-            self.weight_getter = self._get_none
+    def devel_class_prevalence(self, cat_label):
+        return self.__prevalence(self.devel.target[self._devel_indexes, cat_label])
 
-        tini=time.time()
-        devel_vec = vectorizer.fit_transform(self.devel.data)
-        test_vec = vectorizer.transform(self.test.data)
-        print("Vectorizer took %ds" % (time.time()-tini))
-        #sorting the indexes simplifies the creation of sparse tensors a lot
-        devel_vec.sort_indices()
-        test_vec.sort_indices()
-        return devel_vec, test_vec
+    def train_class_prevalence(self, cat_label):
+        return self.__prevalence(self.devel.target[self._train_indexes, cat_label])
 
-    #virtually remove invalid documents (documents without any non-zero feature)
+    def valid_class_prevalence(self, cat_label):
+        return self.__prevalence(self.devel.target[self._valid_indexes, cat_label])
+
+    def test_class_prevalence(self, cat_label):
+        return self.__prevalence(self.test.target[self.test_indexes, cat_label])
+
+    def term_weighting(self):
+        tini = time.time()
+        method = self.vectorizer
+        #if the vectorizer was set to tf or binary, then there is nothing else to do here (the co-occurrence matrix is
+        #already binary, or tf-counters -- see function get_coocurrence_matrix)
+        if (method in ['binary','l1']) or (method == 'tf' and self.sublinear_tf == False):
+            self._devel_vec = self._devel_coocurrence
+            self._test_vec = self._test_coocurrence
+            if method == 'l1':
+                if self.norm not in ['l1','none',None]: raise ValueError('L1 term weight request with an additional normalization, this should be a mistake...')
+                if self.sublinear_tf: raise ValueError('L1 term weight request with sublinear tf, this should be a mistake...')
+                self._devel_vec = normalize(self._devel_vec, norm='l1', axis=1, copy=False)
+                self._test_vec = normalize(self._test_vec, norm='l1', axis=1, copy=False)
+        else:
+            if method in ['tfidf', 'tf']:
+                idf = 'idf' in self.vectorizer
+                if self.norm == 'none': self.norm=None
+                vectorizer = TfidfTransformer(norm=self.norm, use_idf=idf, smooth_idf=True, sublinear_tf=self.sublinear_tf)
+            elif method == 'bm25':
+                if self.norm != 'none':
+                    print('Warning: bm25 with a post-normalization.')
+                err_exception(self.sublinear_tf, "BM25 can not be combined with sublinear_tf")
+                vectorizer = BM25Transformer(norm=self.norm)
+            elif method in self.supervised_tw_methods:
+                tsr_map = {'tfig':information_gain, 'tfchi2':chi_square, 'tfgr':gain_ratio, 'tfrf':relevance_frequency, 'tfcw':conf_weight, 'tffs':fisher_score_binary}
+                vectorizer = TSRweighting(tsr_map[method], global_policy=self.global_policy,
+                                          supervised_4cell_matrix=self.get_4cell_matrix(),
+                                          sublinear_tf=self.sublinear_tf, norm=self.norm)
+                self.vectorizer += ('_' + self.global_policy)
+
+            self._devel_vec = vectorizer.fit_transform(self._devel_coocurrence, self.devel.target)
+            self._test_vec = vectorizer.transform(self._test_coocurrence)
+
+        self.vectorizer = ('sublinear_' if self.sublinear_tf else '') + method
+
+        self.__sout("Term weighting: %s, took <%ds" % (self.vectorizer, (time.time() - tini) + 1))
+
+    def get_coocurrence_matrix(self):
+        min_df = 1 #if self.name == 'reuters21578' else 3 #since reuters contains categories with less than 3 documents
+        binary= self.vectorizer == 'binary'
+        count_vec = CountVectorizer(stop_words='english', binary=binary, min_df=min_df)
+        self._devel_coocurrence = count_vec.fit_transform(self.devel.data)
+        self._test_coocurrence  = count_vec.transform(self.test.data)
+
+    #virtually removes invalid documents (documents without any non-zero feature)
     def _get_doc_indexes(self, vector_set):
         all_indexes = np.arange(vector_set.shape[0])
         return [i for i in all_indexes if vector_set[i].nnz>0]
 
-    def get_index_values(self, batch):
-        num_indices = len(batch.nonzero()[0])
-        indices = batch.nonzero()[0].reshape(num_indices, 1)
-        values = batch.nonzero()[1]
-        return indices, values
-
-    def _get_none(self, batch):
-        return []
-
-    def _get_weights(self, batch):
-        return batch.data
-
-    def _sparse_batch_getter(self, batch):
-        return batch
-
-    def _sparse_index_batch_getter(self, batch):
-        indices, values = self.get_index_values(batch)
-        weights = self.weight_getter(batch)
-        return indices, values, weights
-
-    def _dense_batch_getter(self, batch):
-        return batch
-
-    def _null_batch_getter(self, batch):
-        indices, values = self.get_index_values(batch)
-        weights = self.weight_getter(batch)
-        return indices, values, weights
-
-    def __get_set(self, vec_set, target, indexes):
-        repr = self._batch_getter(vec_set[indexes])
-        labels = target[indexes]
-        return repr, labels
+    def set_representation_mode(self, rep_mode):
+        if rep_mode == 'dense':
+            self._devel_vec = self._devel_vec.toarray()
+            self._test_vec = self._test_vec.toarray()
+        elif rep_mode == 'sparse':
+            # sorting the indexes simplifies the creation of sparse tensors a lot
+            self._devel_vec.sort_indices()
+            self._test_vec.sort_indices()
 
     def get_devel_set(self):
-        return self.__get_set(self.devel_vec, self.devel.target, self.devel_indexes)
+        return self._devel_vec[self._devel_indexes], self.devel.target[self._devel_indexes]
 
     def get_train_set(self):
-        return self.__get_set(self.devel_vec, self.devel.target, self.train_indexes)
+        return self._devel_vec[self._train_indexes], self.devel.target[self._train_indexes]
 
     def get_validation_set(self):
-        return self.__get_set(self.devel_vec, self.devel.target, self.valid_indexes)
+        return self._devel_vec[self._valid_indexes], self.devel.target[self._valid_indexes]
 
     def get_test_set(self):
-        return self.__get_set(self.test_vec, self.test.target, self.test_indexes)
+        return self._test_vec[self.test_indexes], self.test.target[self.test_indexes]
 
     def train_batch(self, batch_size=64):
-        if self.offset == 0 and self.epoch == 0: random.shuffle(self.train_indexes)
+        if self.offset == 0: random.shuffle(self._train_indexes)
         to_pos = min(self.offset + batch_size, self.num_tr_documents())
-        batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]
-        batch_rep = self._batch_getter(batch)
-        labels = self.devel.target[self.train_indexes[self.offset:to_pos]]
+        batch = self._devel_vec[self._train_indexes[self.offset:to_pos]]
+        labels = self.devel.target[self._train_indexes[self.offset:to_pos]]
         self.offset += batch_size
         if self.offset >= self.num_tr_documents():
             self.offset = 0
             self.epoch += 1
-            random.shuffle(self.train_indexes)
-        return batch_rep, labels
+        return batch, labels
 
-    def val_batch(self):
-        return self.get_validation_set()
+    def __sout(self, msg):
+        if self.verbose:
+            print(msg)
 
-    def test_batch(self):
-        return self.get_test_set()
-
-    def feature_label_contingency_table(self, feat_index, cat_label=1):
-        feat_vec = self.devel_vec[:,feat_index] #TODO: cache also the feature-vectors
-        if cat_label not in self.cat_vec_dic:
-            binary_target = self.binarize_label_vector(self.devel.target, self.classification, cat_label)
-            self.cat_vec_dic[cat_label] = set([i for i, label in enumerate(binary_target) if label == 1])
-        feat_doc_set = set(feat_vec.nonzero()[0])
-        return feature_label_contingency_table(self.cat_vec_dic[cat_label], feat_doc_set, self.num_devel_docs())
-
-    def num_devel_docs(self):
-        return len(self.devel_indexes)
+    def num_devel_documents(self):
+        return len(self._devel_indexes)
 
     def num_categories(self):
-        return len(np.unique(self.devel.target))
+        return self.devel.target.shape[1]
 
     def num_features(self):
-        return self.devel_vec.shape[1]
+        return self._devel_vec.shape[1]
 
     def num_tr_documents(self):
-        return len(self.train_indexes)
+        return len(self._train_indexes)
 
     def num_val_documents(self):
-        return len(self.valid_indexes)
+        return len(self._valid_indexes)
 
     def num_test_documents(self):
         return len(self.test_indexes)
@@ -284,18 +295,11 @@ class TextCollectionLoader:
     def get_categories(self):
         return self.devel.target_names
 
-    def get_4cell_matrix(self):
-        if self.supervised_4cell_matrix is None:
-            devel_occ, devel_target = self.get_devel_set()
-            if len(devel_target.shape)==1:
-                devel_target = devel_target.reshape(-1,1)
-            self.supervised_4cell_matrix = get_supervised_matrix(devel_occ, devel_target)
-        return self.supervised_4cell_matrix
-
-    def fetch_20newsgroups(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_20newsgroups(cls, data_path=None, subset='train'):
         if data_path is None:
             data_path = os.path.join(get_data_home(), '20newsgroups')
-            create_if_not_exists(data_path)
+        create_if_not_exists(data_path)
         _20news_pickle_path = os.path.join(data_path, "20newsgroups." + subset + ".pickle")
         if not os.path.exists(_20news_pickle_path):
             metadata = ('headers', 'footers', 'quotes')
@@ -305,12 +309,13 @@ class TextCollectionLoader:
             dataset = pickle.load(open(_20news_pickle_path, 'rb'))
         return dataset
 
-    def fetch_reuters21579(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_reuters21579(cls, data_path=None, subset='train'):
         if data_path is None:
-            data_path = os.path.join(get_data_home(), 'reuters')
+            data_path = os.path.join(get_data_home(), 'reuters21578')
         reuters_pickle_path = os.path.join(data_path, "reuters." + subset + ".pickle")
         if not os.path.exists(reuters_pickle_path):
-            parser = ReutersParser()
+            parser = ReutersParser(data_path=data_path)
             for filename in glob(os.path.join(data_path, "*.sgm")):
                 parser.parse(open(filename, 'rb'))
             # index category names with a unique numerical code (only considering categories with training examples)
@@ -326,7 +331,7 @@ class TextCollectionLoader:
 
             pickle_tr = pickle_documents(parser.tr_docs, "train")
             pickle_te = pickle_documents(parser.te_docs, "test")
-            print('Empty docs %d' % parser.empty_docs)
+            #self.sout('Empty docs %d' % parser.empty_docs)
             requested_subset = pickle_tr if subset == 'train' else pickle_te
         else:
             requested_subset = pickle.load(open(reuters_pickle_path, 'rb'))
@@ -335,7 +340,8 @@ class TextCollectionLoader:
         text_data, topics = zip(*data)
         return Dataset(data=text_data, target=topics, target_names=requested_subset['categories'])
 
-    def fetch_ohsumed20k(self, data_path=None, subset='train'):
+    @classmethod
+    def fetch_ohsumed20k(cls, data_path=None, subset='train'):
         _dataname = 'ohsumed_20k'
         if data_path is None:
             data_path = join(os.path.expanduser('~'), _dataname)
@@ -376,8 +382,9 @@ class TextCollectionLoader:
 
         return pickle.load(open(pickle_file, 'rb'))
 
-    def fetch_ohsumed50k(self, data_path=None, subset='train', train_test_split=0.7):
-        _dataname = 'ohsumed_50k'
+    @classmethod
+    def fetch_ohsumed50k(cls, data_path=None, subset='train', train_test_split=0.7):
+        _dataname = 'ohsumed'
         if data_path is None:
             data_path = join(os.path.expanduser('~'), _dataname)
         create_if_not_exists(data_path)
@@ -393,7 +400,6 @@ class TextCollectionLoader:
             if not os.path.exists(os.path.join(data_path, untardir)):
                 print("untarring ohsumed...")
                 tarfile.open(archive_path, 'r:gz').extractall(data_path)
-
 
             target_names = []
             doc_classes = dict()
@@ -431,7 +437,7 @@ class TextCollectionLoader:
         return pickle.load(open(pickle_file, 'rb'))
 
 
-    def __distribute_evenly(self, pos_docs, neg_docs, target_names):
+"""  def __distribute_evenly(self, pos_docs, neg_docs, target_names):
         data = pos_docs + neg_docs
         target = [1] * len(pos_docs) + [0] * len(neg_docs)
         # to prevent all positive (negative) documents to be placed together, we distribute them evenly
@@ -439,6 +445,10 @@ class TextCollectionLoader:
         return Dataset(data=np.array(data),
                        target=np.array(target),
                        target_names=target_names)
+
+    def __pickle_dataset(self, train, test, path, name, posfix=''):
+        pickle.dump(train, open(join(path, name+'.train' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(test, open(join(path, name+'.test' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     def __process_posneg_dataset(self, pos_docs, neg_docs, train_test_split):
         random.shuffle(pos_docs)
@@ -449,10 +459,6 @@ class TextCollectionLoader:
         train = self.__distribute_evenly(tr_pos, tr_neg, target_names)
         test = self.__distribute_evenly(te_pos, te_neg, target_names)
         return train, test
-
-    def __pickle_dataset(self, train, test, path, name, posfix=''):
-        pickle.dump(train, open(join(path, name+'.train' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
-        pickle.dump(test, open(join(path, name+'.test' + posfix + '.pickle'), 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
     def fetch_movie_reviews(self, subset='train', data_path=None, train_test_split=0.7):
         if data_path is None:
@@ -535,39 +541,6 @@ class TextCollectionLoader:
 
         else:
             return pickle.load(open(imdb_pickle_file, 'rb'))
+"""
 
 
-class TftsrVectorizer:
-    def __init__(self, binary_target, tsr_function, stop_words='english', sublinear_tf=False, min_df=1):
-        self.stop_words = stop_words
-        self.sublinear_tf = sublinear_tf
-        self.tsr_function = tsr_function
-        self.cat_doc_set = set([i for i, label in enumerate(binary_target) if label == 1])
-        self.supervised_info = None
-        self.min_df = min_df
-
-    def fit_transform(self, raw_documents):
-        self.vectorizer = TfidfVectorizer(stop_words=self.stop_words, sublinear_tf=self.sublinear_tf, use_idf=False, min_df=self.min_df)
-        self.devel_vec = self.vectorizer.fit_transform(raw_documents)
-        #return self.devel_vec
-        #print self.devel_vec.shape
-        return self.supervised_weighting(self.devel_vec)
-
-    def transform(self, raw_documents):
-        if not hasattr(self, 'vectorizer'): raise NameError('TftsrVectorizer: transform method called before fit.')
-        transformed = self.vectorizer.transform(raw_documents)
-        return self.supervised_weighting(transformed)
-        #return transformed
-
-    def supervised_weighting(self, w):
-        w = w.toarray()
-        num_cores = multiprocessing.cpu_count()
-        nD, nF = w.shape
-        if self.supervised_info is None:
-            #sup = [wrap_contingency_table(f,self.devel_vec, self.cat_doc_set, nD) for f in range(nF)]
-            sup = Parallel(n_jobs=num_cores, backend="threading")(
-                delayed(wrap_contingency_table)(f, self.devel_vec, self.cat_doc_set, nD) for f in range(nF))
-            self.supervised_info = np.array([self.tsr_function(sup_i) for sup_i in sup])
-        sup_w = np.multiply(w, self.supervised_info)
-        sup_w = sklearn.preprocessing.normalize(sup_w, norm='l2', axis=1, copy=False)
-        return scipy.sparse.csr_matrix(sup_w)

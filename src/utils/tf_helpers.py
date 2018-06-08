@@ -35,10 +35,10 @@ def projection_weights(orig_size, target_size, name=''):
     print 'Projection weights: %s' % name
     return weight, bias
 
-def get_projection_weights(shape, name):
+def get_projection_weights(shape, name, bias=True):
     target_dim = shape[-1]
     weights = tf.get_variable(name+'w', shape, initializer=tf.random_normal_initializer(stddev=1. / math.sqrt(target_dim)))
-    biases = tf.get_variable(name+'b', [target_dim], initializer=tf.constant_initializer(0.0))
+    biases = tf.get_variable(name+'b', [target_dim], initializer=tf.constant_initializer(0.0)) if bias else None
     return weights, biases
 
 def ff_multilayer(ini_layer, hidden_sizes, non_linear_function=tf.nn.relu, keep_prob=None, name=''):
