@@ -278,21 +278,6 @@ def main(argv=None):
         acc, f1, p, r = evaluation_metrics(predictions, test_y)
         print('Logistic Regression acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f' % (acc, f1, p, r))
 
-        run_params_dic = {'num_features': data.num_features(),
-                          'date': strftime("%d-%m-%Y", gmtime()),
-                          'hiddensize': FLAGS.hidden,
-                          'lrate': FLAGS.lrate,
-                          'optimizer': FLAGS.optimizer,
-                          'normalize': FLAGS.normalize,
-                          'nonnegative': FLAGS.forcepos,
-                          'pretrain': FLAGS.pretrain,
-                          'iterations': idf_steps + log_steps,
-                          'notes': FLAGS.notes ,
-                          'run': FLAGS.run,
-                          'learn_tf':FLAGS.learntf,
-                          'learn_idf': True,
-                          'learn_norm': False}
-
         # if indicated, saves the result of the current logistic regressor
         # if FLAGS.resultcontainer:
         #     results = BasicResultTable(FLAGS.resultcontainer)
@@ -304,15 +289,29 @@ def main(argv=None):
 
         print 'Weighting documents'
         train_x, train_y = data.get_train_set()
-        # train_x_weighted = normalized.eval(feed_dict={x: train_x, keep_p: 1.0})
         train_x_weighted = weight_docs(train_x)
+
         val_x, val_y   = data.get_validation_set()
-        # val_x_weighted = normalized.eval(feed_dict={x: val_x, keep_p: 1.0})
         val_x_weighted = weight_docs(val_x)
+
         test_x, test_y   = data.get_test_set()
-        # test_x_weighted  = normalized.eval(feed_dict={x:test_x, keep_p:1.0})
         test_x_weighted = weight_docs(test_x)
+
         vectorizer_name = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf else '')
+        run_params_dic = {'num_features': data.num_features(),
+                          'date': strftime("%d-%m-%Y", gmtime()),
+                          'hiddensize': FLAGS.hidden,
+                          'lrate': FLAGS.lrate,
+                          'optimizer': FLAGS.optimizer,
+                          'normalize': FLAGS.normalize,
+                          'outmode': 'sigmoid' if FLAGS.forcepos else 'I',
+                          'pretrain': FLAGS.pretrain,
+                          'iterations': idf_steps + log_steps,
+                          'notes': FLAGS.notes,
+                          'run': FLAGS.run,
+                          'learn_tf': FLAGS.learntf,
+                          'learn_idf': True,
+                          'learn_norm': False}
         wv = WeightedVectors(vectorizer=vectorizer_name, from_dataset=data.name, from_category=FLAGS.cat,
                              trX=train_x_weighted, trY=train_y,
                              vaX=val_x_weighted, vaY=val_y,

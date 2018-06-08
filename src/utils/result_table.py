@@ -92,6 +92,7 @@ class BaselineResultTable(BasicResultTable):
 class Learning2Weight_ResultTable(BaselineResultTable):
     learn_columns = ['run',
                     'hiddensize',
+                    'outmode',
                     'learn_tf',
                     'learn_idf',
                     'learn_norm',
@@ -100,51 +101,11 @@ class Learning2Weight_ResultTable(BaselineResultTable):
         columns = self.columns + self._evaluation_metrics(classification_mode) + self.learn_columns
         super(BaselineResultTable, self).__init__(result_container, columns)
 
-    def set_learn_params(self, hiddensize, iterations, learn_tf=False, learn_idf=False, learn_norm=False, run=0):
+    def set_learn_params(self, hiddensize, iterations, outmode, learn_tf=False, learn_idf=False, learn_norm=False, run=0):
         self.set('hiddensize', hiddensize)
         self.set('iterations', iterations)
+        self.set('outmode', outmode)
         self.set('learn_tf', learn_tf)
         self.set('learn_idf', learn_idf)
         self.set('learn_norm', learn_norm)
         self.set('run', run)
-
-
-class AB_Results(object):
-    def __init__(self, file, columns, autoflush=True, verbose=False):
-        self.file = file
-        self.columns = columns
-        self.column_set = set(columns)
-        self.autoflush = autoflush
-        self.verbose = verbose
-        if os.path.exists(file):
-            self.tell('Loading existing file from {}'.format(file))
-            self.df = pd.read_csv(file, sep='\t')
-        else:
-            self.tell('File {} does not exist. Creating new frame.'.format(file))
-            dir = os.path.dirname(self.file)
-            if dir and not os.path.exists(dir): os.makedirs(dir)
-            self.df = pd.DataFrame(columns=self.columns)
-
-    def already_calculated(self, **kwargs):
-        check = None
-        for k in kwargs:
-            if check is not None:
-                check = (check & (self.df[k]==kwargs[k]))
-            else:
-                check = (self.df[k] == kwargs[k])
-        return check.any()
-
-    def add_row(self, **kwargs):
-        if self.column_set != set(kwargs.keys()):
-            raise ValueError('Inconsistent columns for new entry ' + ','.join(kwargs.items()))
-        input_vect = [kwargs[c] for c in self.columns]
-        s = pd.Series(input_vect, index=self.columns)
-        self.df = self.df.append(s, ignore_index=True)
-        if self.autoflush: self.flush()
-        self.tell(s.to_string())
-
-    def flush(self):
-        self.df.to_csv(self.file, index=False, sep='\t')
-
-    def tell(self, msg):
-        if self.verbose: print(msg)
