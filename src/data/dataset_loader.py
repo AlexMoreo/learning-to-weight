@@ -35,6 +35,7 @@ class TextCollectionLoader:
     valid_vectorizers = ['tfcw', 'tfgr', 'tfidf', 'count', 'binary', 'hashing', 'sublinear_tfidf', 'sublinear_tf', 'tfchi2', 'tfig', 'tfrf', 'bm25']
     valid_repmodes = ['sparse', 'dense', 'sparse_index']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
+    version=1.0
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='hashing', rep_mode='sparse', positive_cat=None, feat_sel=None):
         err_param_range('vectorize', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
         err_param_range('rep_mode', rep_mode, valid_values=TextCollectionLoader.valid_repmodes)
@@ -178,6 +179,7 @@ class TextCollectionLoader:
             self.weight_getter = self._get_none
 
         tini=time.time()
+
         devel_vec = vectorizer.fit_transform(self.devel.data)
         test_vec = vectorizer.transform(self.test.data)
         print("Vectorizer took %ds" % (time.time()-tini))

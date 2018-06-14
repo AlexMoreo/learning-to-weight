@@ -33,7 +33,7 @@ class TextCollectionLoader:
     valid_repmodes = ['sparse', 'dense']
     valid_global_policies = ['max', 'ave', 'wave', 'sum']
     valid_catcodes = {'20newsgroups':range(20), 'reuters21578':range(115), 'ohsumed':range(23), 'ohsumed20k':range(23)}#, 'movie_reviews':[1], 'sentence_polarity':[1], 'imdb':[1]}
-
+    version = 2.0
     def __init__(self, dataset, valid_proportion=0.2, vectorizer='tfidf', rep_mode='sparse', positive_cat=None, feat_sel=None,
                  sublinear_tf=False, global_policy="max", tsr_function=chi_square, verbose=False, norm='l2', random_state=42):
         err_param_range('vectorizer', vectorizer, valid_values=TextCollectionLoader.valid_vectorizers)
