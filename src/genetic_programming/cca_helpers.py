@@ -46,7 +46,8 @@ def ft03_csr(tf):
 
 def ft04_csr(tf):
     tf = tf.copy()
-    avgtf = tf.sum(axis=1).getA1() / tf.getnnz(axis=1) # the .mean takes into account all 0 values
+
+    avgtf = tf.sum(axis=1).getA1() /  tf.getnnz(axis=1).clip(1.) # the .mean takes into account all 0 values
     lg_avgtf = np.log(avgtf)
     rows,cols = tf.nonzero()
     tf[rows,cols] = ((1. + log(tf[rows, cols])) / (1. + lg_avgtf[rows]))
@@ -286,11 +287,12 @@ def addition(x, y):
             else: # csr + dense
                 r,c = y.shape
                 if r == 1: # csr + dense-row
-                    z[rows, cols] += y[0, cols]
+                    y_ = y[0, cols]
                 elif c == 1: # csr + dense-col
-                    z[rows, cols] += y[rows, 0].T
+                    y_ = y[rows, 0]
                 else: # csr + dense-full
-                    z[rows, cols] += y[rows, cols]
+                    y_ = y[rows, cols]
+                z[rows, cols] += np.asarray(y_).flatten()
             return z
     else: # dense + ?
         if isinstance(y, float) or issparse(y):
@@ -338,11 +340,12 @@ def multiplication(x, y):
             else: # csr * dense
                 r,c = y.shape
                 if r == 1: # csr * dense-row
-                    z[rows, cols] = np.multiply(z[rows, cols], y[0, cols])
+                    y_ = y[0, cols]
                 elif c == 1: # csr * dense-col
-                    z[rows, cols] = np.multiply(z[rows, cols], y[rows, 0].T)
+                    y_ = y[rows, 0]
                 else: # csr * dense-full
-                    z[rows, cols] = np.multiply(z[rows, cols], y[rows, cols])
+                    y_ = y[rows, cols]
+                z[rows, cols] = np.multiply(z[rows, cols], np.asarray(y_).flatten())
             return z
     else: # dense * ?
         if isinstance(y, float) or issparse(y):
@@ -390,7 +393,7 @@ def division(x, y):
                 if r == 1: # csr / dense-row
                     denom = y[0, cols]
                 elif c == 1: # csr / dense-col
-                    denom = y[rows, 0].T
+                    denom = y[rows, 0]
                 else: # csr / dense-full
                     denom = y[rows, cols]
                 denom = np.asarray(denom).flatten()
@@ -412,8 +415,9 @@ def division(x, y):
                 numer = x[rows, 0]
             else:  # dense-full / csr
                 numer = x[rows, cols]
-            denom = y[rows, cols]
-            z[rows, cols] = np.divide(numer.flatten(), denom.flatten()) # denom comes from nonzero()
+            numer = np.asarray(numer).flatten()
+            denom = np.asarray(y[rows, cols]).flatten()
+            z[rows, cols] = np.divide(numer, denom) # denom comes from nonzero()
             z.eliminate_zeros()
             return z
         if x.shape == y.shape:

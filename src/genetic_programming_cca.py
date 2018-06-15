@@ -1,7 +1,7 @@
 import argparse
 from time import strftime, gmtime
 import time
-
+import sys
 from data.weighted_vectors import WeightedVectors
 from genetic_programming.cca_helpers import *
 from scipy.sparse import vstack
@@ -36,7 +36,7 @@ def main(args):
 
         # compute the fitness for each individual
         print('\tComputing fitness')
-        best_score = fitness_population(population, Xva_terminals, ytr, yva, show=True)
+        fitness_population(population, Xva_terminals, ytr, yva, show=True)
 
         # create new population
         print('\tReproduction')
@@ -55,8 +55,9 @@ def main(args):
     elapsed_time = time.time() - t_init
 
     print('Best individuals:')
-    for p in population[:10]:
+    for p in population[:5]:
         print(p)
+        print()
 
     Xte_terminals = get_terminals(Xte, slope_t15, slope_t16, slope_t17, asdict=True)
 
@@ -77,9 +78,8 @@ def main(args):
                          teX=best(Xte_terminals), teY=yte,
                          run_params_dic=run_params_dic)
 
-    outname = 'GenCCA_' + args.dataset[:3] + '_C' + str(args.cat) + '_R' + str(args.run) + '.pickle'
-    wv.pickle(args.outdir, outname)
-    print 'Weighted vectors saved at ' + outname
+    wv.pickle(args.outdir, args.outname)
+    print 'Weighted vectors saved at ' + args.outname
 
 
 if __name__ == '__main__':
@@ -90,11 +90,18 @@ if __name__ == '__main__':
     parser.add_argument('cat', help='positive category', type=int)
     parser.add_argument('--fs', help='feature selection', type=float, default=0.1)
     parser.add_argument('--outdir', help='Output dir for learned vectors (default "../vectors").', type=str, default='../vectors')
-    parser.add_argument('--run', help='Output dir for learned vectors (default "../vectors").', type=str, default=0)
+    parser.add_argument('--run', help='Number of run, and seed used to replicate experiments (default 0).', type=int, default=0)
     parser.add_argument('--populationsize', help='Size of the population (default 200).', type=int, default=200)
     parser.add_argument('--maxdepth', help='Max depth of the initial population (default 5).', type=int, default=5)
     parser.add_argument('--maxiter', help='Maximum number of iterations (default 30).', type=int, default=30)
 
     args = parser.parse_args()
+    args.outname = 'GenCCA_' + args.dataset[:3] + '_C' + str(args.cat) + '_R' + str(args.run) + '.pickle'
+
+    if os.path.exists(os.path.join(args.outdir, args.outname)):
+        print("Vector file {} already computed in dir {}. Skipping.".format(args.outname, args.outdir))
+        sys.exit(1)
+
+    np.random.seed(args.run)
 
     main(args)
