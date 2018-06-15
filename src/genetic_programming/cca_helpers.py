@@ -135,7 +135,7 @@ def ft13_col(tf):
 
 def ft14_col(tf): # average document length in bytes
     dl = tf.sum(axis=1)*6. # the average number of chars per word is around 6
-    dl = dl.clamp(min=1) # to avoid possible divisions by 0
+    dl = dl.clip(min=1) # to avoid possible divisions by 0
     return dl.reshape(-1, 1)
 
 
