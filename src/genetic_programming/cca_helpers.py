@@ -46,9 +46,8 @@ def ft03_csr(tf):
 
 def ft04_csr(tf):
     tf = tf.copy()
-
     avgtf = tf.sum(axis=1).getA1() /  tf.getnnz(axis=1).clip(1.) # the .mean takes into account all 0 values
-    lg_avgtf = np.log(avgtf)
+    lg_avgtf = np.log(avgtf.clip(1.))
     rows,cols = tf.nonzero()
     tf[rows,cols] = ((1. + log(tf[rows, cols])) / (1. + lg_avgtf[rows]))
     return tf
@@ -118,9 +117,9 @@ def ft12_col(tf):
     rows,cols = tf.nonzero()
     tfidf = tffactor.copy()
     tfidf[rows,cols] = np.multiply(tffactor[rows,cols], idffactor[cols])
-    # nF = tf.shape[1]
-    cosnorm = 1. / norm(tfidf , ord=2, axis=1)
-    # return np.tile(cosnorm.reshape(-1,1), (1, nF))
+    norms = norm(tfidf , ord=2, axis=1)
+    norms[norms == 0] = 1.
+    cosnorm = 1. / norms
     return cosnorm.reshape(-1, 1)
 
 def ft13_col(tf):
@@ -129,9 +128,9 @@ def ft13_col(tf):
     rows,cols = tf.nonzero()
     tfidf = tffactor.copy()
     tfidf[rows,cols] = np.multiply(tffactor[rows,cols], idffactor[cols])
-    # nF = tf.shape[1]
-    cosnorm = 1. / norm(tfidf, ord=2, axis=1)
-    # return np.tile(cosnorm.reshape(-1,1), (1, nF))
+    norms = norm(tfidf, ord=2, axis=1)
+    norms[norms==0] = 1. #empty documents after feature selection could exist
+    cosnorm = 1. / norms
     return cosnorm.reshape(-1, 1)
 
 def ft14_col(tf): # average document length in bytes
