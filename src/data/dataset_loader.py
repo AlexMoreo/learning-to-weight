@@ -13,7 +13,7 @@ from sklearn.externals.six.moves import urllib
 from sklearn.feature_extraction.text import HashingVectorizer, TfidfVectorizer
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import chi2
-from custom_vectorizers import *
+from data.custom_vectorizers import *
 from feature_selection.tsr_function import *
 from utils.helpers import *
 from reuters21578_parser import ReutersParser
