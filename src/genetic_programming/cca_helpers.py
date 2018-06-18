@@ -384,6 +384,8 @@ def division(x, y):
             rows, cols = y.nonzero()
             z[rows, cols] = np.divide(x[rows,cols],y[rows,cols]) #y[rows,cols] come from nonzero()
         else:
+            if x.nnz == 0:
+                return x
             z = x.copy()
             rows, cols = x.nonzero()
             if isinstance(y, float):  # csr / float
