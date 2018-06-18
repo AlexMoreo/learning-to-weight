@@ -89,7 +89,7 @@ def main(argv=None):
         def idf_like(feat_info):
             if FLAGS.computation == 'local': idf_ = local_idflike(feat_info)
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
-            return tf.nn.relu(idf_) if FLAGS.forcepos else idf_
+            return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
 
         weighted_layer = tf.multiply(tf_like(x), idf_like(feat_info))
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
