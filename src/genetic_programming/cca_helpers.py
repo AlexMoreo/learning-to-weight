@@ -569,23 +569,18 @@ class Tree:
 
     def fitness(self, eval_dict, ytr, yva):
         if self.fitness_score is None:
-            #print('computing:')
-            #print(self)
-            Xtr_w = self()
-            if isinstance(Xtr_w, float) or min(Xtr_w.shape) == 1: #non valid element, either a float, a row-vector or a colum-vector, not a full matrix
+            try:
+                Xtr_w = self()
+                if isinstance(Xtr_w, float) or min(Xtr_w.shape) == 1: #non valid element, either a float, a row-vector or a colum-vector, not a full matrix
+                    self.fitness_score = 0
+                else:
+                    Xva_w = self(eval_dict)
+                    logreg = LogisticRegression()
+                    logreg.fit(Xtr_w, ytr)
+                    yva_ = logreg.predict(Xva_w)
+                    self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
+            except Exception: # some individuals may generate Inf or too large values
                 self.fitness_score = 0
-            else:
-                Xva_w = self(eval_dict)
-                #print('Training logistic regression...')
-		try:
-                	logreg = LogisticRegression()
-                	logreg.fit(Xtr_w, ytr)
-                #print('\tdone')
-                	yva_ = logreg.predict(Xva_w)
-
-                	self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
-		except ValueError: # some individuals may generate Inf or too large values
-			self.fitness_score = 0
         return self.fitness_score
 
     def preorder(self):
@@ -756,7 +751,7 @@ if __name__ == '__main__':
         try:
             z = op(x,y)
             tested += 1
-        except ValueError:
+        except Exception:
             z = None
             failed+=1
         print('tested',tested,'failed',failed)
