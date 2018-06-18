@@ -570,13 +570,15 @@ class Tree:
             else:
                 Xva_w = self(eval_dict)
                 #print('Training logistic regression...')
-                logreg = LogisticRegression()
-                logreg.fit(Xtr_w, ytr)
+		try:
+                	logreg = LogisticRegression()
+                	logreg.fit(Xtr_w, ytr)
                 #print('\tdone')
-                yva_ = logreg.predict(Xva_w)
+                	yva_ = logreg.predict(Xva_w)
 
-                self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
-
+                	self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
+		except ValueError: # some individuals may generate Inf or too large values
+			self.fitness_score = 0
         return self.fitness_score
 
     def preorder(self):
