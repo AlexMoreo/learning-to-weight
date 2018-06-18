@@ -261,6 +261,7 @@ def ct21_float(tf=None):
 def logarithm(x):
     if issparse(x):
         if x.nnz > 0:
+            if x.nnz == 0: return x
             x = x.copy()
             rows, cols = x.nonzero()
             x[rows, cols] = np.log(np.abs(x[rows,cols]))
@@ -280,6 +281,7 @@ def addition(x, y):
         if issparse(y): # csr + csr
             return x+y
         else:
+            if x.nnz == 0: return x
             z = x.copy()
             rows, cols = x.nonzero()
             if isinstance(y, float):  # csr + float
@@ -333,6 +335,7 @@ def multiplication(x, y):
         if issparse(y): # csr * csr
             return x.multiply(y)
         else:
+            if x.nnz == 0: return x
             z = x.copy()
             rows, cols = x.nonzero()
             if isinstance(y, float):  # csr * float
@@ -370,6 +373,7 @@ def division(x, y):
         if isinstance(y, float):
             return x/y
         if issparse(y):
+            if y.nnz == 0: return x
             z = y.copy()
             rows, cols = z.nonzero()
             z[rows,cols] = x / z[rows,cols]
@@ -380,12 +384,12 @@ def division(x, y):
             return z
     elif issparse(x): # csr / ? ---
         if issparse(y): # csr / csr
+            if y.nnz == 0: return x
             z = y.copy()
             rows, cols = y.nonzero()
             z[rows, cols] = np.divide(x[rows,cols],y[rows,cols]) #y[rows,cols] come from nonzero()
         else:
-            if x.nnz == 0:
-                return x
+            if x.nnz == 0: return x
             z = x.copy()
             rows, cols = x.nonzero()
             if isinstance(y, float):  # csr / float
@@ -408,6 +412,7 @@ def division(x, y):
         if isinstance(y, float):
             return np.divide(x,y)
         elif issparse(y):
+            if y.nnz == 0: return x
             z = y.copy()
             rows, cols = y.nonzero()
             r, c = x.shape
