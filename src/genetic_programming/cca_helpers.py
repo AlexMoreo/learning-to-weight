@@ -1,7 +1,6 @@
 import numpy as np
-from numpy import log, add, multiply, divide
+from numpy import log
 from sklearn.linear_model import LogisticRegression
-
 from data.dataset_loader import TextCollectionLoader
 import cPickle as pickle
 from utils.helpers import create_if_not_exists
@@ -12,435 +11,11 @@ from joblib import Parallel
 from joblib import delayed
 import numpy as np
 from sklearn.metrics import f1_score
+from cca_operations import *
+from cca_terminals import *
 
 
-
-ALLOW_DENSIFICATION = True
-
-k1 = 1.2
-k2 = 0.
-k3 = 1000.
-b = 0.75
-
-# ----------------------------------------------------------------
-# Athoms
-# ----------------------------------------------------------------
-#
-# csr_matrix:
-# ----------------------------------------------------------------
-def ft01_csr(tf):
-    return tf.copy()
-
-def ft02_csr(tf):
-    tf = tf.copy()
-    nonzeros = (tf!=0)
-    tf[nonzeros] = 1+log(tf[nonzeros])
-    return tf
-
-def ft03_csr(tf):
-    tf = tf.copy()
-    maxtf = tf.max(axis=1).toarray().flatten()
-    rows,cols = tf.nonzero()
-    tf[rows, cols] = 0.5 + ((0.5 + tf[rows, cols]) / maxtf[rows])
-    return tf
-
-def ft04_csr(tf):
-    tf = tf.copy()
-    avgtf = tf.sum(axis=1).getA1() /  tf.getnnz(axis=1).clip(1.) # the .mean takes into account all 0 values
-    lg_avgtf = np.log(avgtf.clip(1.))
-    rows,cols = tf.nonzero()
-    tf[rows,cols] = ((1. + log(tf[rows, cols])) / (1. + lg_avgtf[rows]))
-    return tf
-
-def ft05_csr(tf):
-    tf = tf.copy()
-    dl = tf.sum(axis=1).getA1()
-    avgdl = dl.mean()
-    rows,cols = tf.nonzero()
-    tf[rows,cols] = ((k1+1)*tf[rows,cols]) / ( (k1*((1-b)+b*dl[rows]/avgdl) + dl[rows]) + tf[rows,cols])
-    return tf
-
-# dense row vector
-# ---------------------------------
-def __df(tf):
-    #the clip is useful to prevent div.by zero, which could happen because the tf can be a split of the training set, so
-    #it is not guaranteed to have all columns non-empty
-    return (tf > 0).toarray().sum(axis=0).clip(1)
-
-def ft06_row(tf):
-    N = tf.shape[0]
-    idf = log(float(N) / __df(tf))
-    return idf.reshape(1,-1)
-    #return np.tile(idf, (N,1))
-
-def ft07_row(tf):#, notile=False):
-    N = tf.shape[0]
-    idf = log(1. + float(N) / __df(tf))
-    return idf.reshape(1, -1)
-    # if notile:
-    #     return idf
-    # else:
-    #     return np.tile(idf, (N, 1))
-
-def ft08_row(tf):
-    N = tf.shape[0]
-    idf = log((0.5 + float(N) - __df(tf))/0.5)
-    # return np.tile(idf, (N, 1))
-    return idf.reshape(1, -1)
-
-def ft09_row(tf):
-    N = tf.shape[0]
-    df = __df(tf)
-    idf = log((0.5 + float(N) - df)/(df + 0.5))
-    # return np.tile(idf, (N, 1))
-    return idf.reshape(1, -1)
-
-def ft10_row(tf):
-    N = tf.shape[0]
-    df = __df(tf)
-    idf = log((float(N) - df)/df)
-    # return np.tile(idf, (N, 1))
-    return idf.reshape(1, -1)
-
-def ft11_row(tf):
-    N = tf.shape[0]
-    df = __df(tf)
-    idf = log((float(N) + 0.5)/df) / log(N+1.)
-    # return np.tile(idf, (N, 1))
-    return idf.reshape(1, -1)
-
-# dense column vector
-# --------------------------------
-def ft12_col(tf):
-    tffactor = ft01_csr(tf)
-    idffactor = ft07_row(tf).squeeze()
-    rows,cols = tf.nonzero()
-    tfidf = tffactor.copy()
-    tfidf[rows,cols] = np.multiply(tffactor[rows,cols], idffactor[cols])
-    norms = norm(tfidf , ord=2, axis=1)
-    norms[norms == 0] = 1.
-    cosnorm = 1. / norms
-    return cosnorm.reshape(-1, 1)
-
-def ft13_col(tf):
-    tffactor = ft02_csr(tf)
-    idffactor = ft07_row(tf).squeeze()
-    rows,cols = tf.nonzero()
-    tfidf = tffactor.copy()
-    tfidf[rows,cols] = np.multiply(tffactor[rows,cols], idffactor[cols])
-    norms = norm(tfidf, ord=2, axis=1)
-    norms[norms==0] = 1. #empty documents after feature selection could exist
-    cosnorm = 1. / norms
-    return cosnorm.reshape(-1, 1)
-
-def ft14_col(tf): # average document length in bytes
-    dl = tf.sum(axis=1)*6. # the average number of chars per word is around 6
-    dl = dl.clip(min=1) # to avoid possible divisions by 0
-    return dl.reshape(-1, 1)
-
-
-# helpers to obtain the best slope for the pivot-length normalization (t15, t16, and t17)
-# --------------------------------
-def _t15_denom(slope, t13, avgt13):
-    return (1. - slope) + slope * (avgt13 / t13)
-
-def _t16_denom(slope, dl, avgdl):
-    return (1. - slope) * avgdl + slope * dl
-
-def _t17_denom(slope, n_unique_terms, pivot):
-    return (1. - slope) * pivot + slope * n_unique_terms
-
-def _score_normalization_lr(X,y,Xva,yva):
-    lr = LogisticRegression(C=1000) # some normalization functions work bad with C=1
-    lr.fit(X, y)
-    yva_ = lr.predict(Xva)
-    return f1_score(yva, yva_)
-
-def _slope_t15_eval(slope, Xtr, ytr, t13, avgt13, Xva, yva, t13va, avgt13va):
-    Xtr_normalized = division(Xtr, _t15_denom(slope, t13, avgt13))
-    Xva_normalized = division(Xva, _t15_denom(slope, t13va, avgt13va))
-    return _score_normalization_lr(Xtr_normalized, ytr, Xva_normalized, yva)
-
-def _slope_t16_eval(slope, Xtr, ytr, dl, avgdl, Xva, yva, dlva):
-    Xtr_normalized = division(Xtr, _t16_denom(slope, dl, avgdl))
-    Xva_normalized = division(Xva, _t16_denom(slope, dlva, avgdl))
-    return _score_normalization_lr(Xtr_normalized, ytr, Xva_normalized, yva)
-
-def _slope_t17_eval(slope, Xtr, ytr, n_unique_terms, Xva, yva, n_unique_terms_va):
-    pivot_tr = n_unique_terms.mean()
-    Xtr_normalized = division(Xtr, _t17_denom(slope, n_unique_terms, pivot_tr))
-    pivot_va = n_unique_terms_va.mean()
-    Xva_normalized = division(Xva, _t17_denom(slope, n_unique_terms_va, pivot_va))
-    return _score_normalization_lr(Xtr_normalized, ytr, Xva_normalized, yva)
-
-def find_best_slope_t15(Xtr, ytr, Xva, yva, slopes=np.arange(0.1, 1.1, 0.1)): #we skip 0 since this equates to doing nothing (so returning t01(tf))
-    t13 = ft13_col(Xtr)
-    avgt13 = t13.mean()
-
-    t13va = ft13_col(Xva)
-    avgt13va = t13va.mean()
-
-    scores = Parallel(n_jobs=-1, backend="threading")(
-        delayed(_slope_t15_eval)(slope, Xtr, ytr, t13, avgt13, Xva, yva, t13va, avgt13va) for slope in slopes
-    )
-    best_slope = slopes[np.argsort(scores)[-1]]
-
-    return best_slope
-
-def find_best_slope_t16(Xtr, ytr, Xva, yva, slopes=np.arange(0.1, 1.1, 0.1)): #we skip 0 since this equates to doing nothing (so returning t01(tf))
-    dl = ft14_col(Xtr)
-    avgdl = dl.mean()
-
-    dlva = ft14_col(Xva)
-
-    scores = Parallel(n_jobs=-1, backend="threading")(
-        delayed(_slope_t16_eval)(slope, Xtr, ytr, dl, avgdl, Xva, yva, dlva) for slope in slopes
-    )
-    best_slope = slopes[np.argsort(scores)[-1]]
-
-    return best_slope
-
-def find_best_slope_t17(Xtr, ytr, Xva, yva, slopes=np.arange(0.1, 1.1, 0.1)): #we skip 0 since this equates to doing nothing (so returning t01(tf))
-    n_unique_terms = (Xtr>0).sum(axis=1)
-    n_unique_terms_va = (Xva > 0).sum(axis=1)
-
-    scores = Parallel(n_jobs=-1, backend="threading")(
-        delayed(_slope_t17_eval)(slope, Xtr, ytr, n_unique_terms, Xva, yva, n_unique_terms_va) for slope in slopes
-    )
-    best_slope = slopes[np.argsort(scores)[-1]]
-
-    return best_slope
-
-def ft15_col(tf, slope_t15):
-    t13 = ft13_col(tf)
-    avgt13 = t13.mean()
-    return 1. / _t15_denom(slope_t15, t13, avgt13)
-
-def ft16_col(tf, slope_t16):
-    dl = ft14_col(tf)
-    avgdl = dl.mean()
-    return 1. / _t16_denom(slope_t16, dl, avgdl)
-
-def ft17_col(tf, slope_t16):
-    n_unique_terms = (tf > 0).sum(axis=1)
-    return 1. / _t17_denom(slope_t16, n_unique_terms, pivot=n_unique_terms.mean())
-
-def ft18_csr(tf):
-    dl = ft14_col(tf)
-    avgdl = dl.mean()
-    factor = (k1*(1.-b)+b*(dl/avgdl))
-    denom = addition(tf, factor)
-    return division(1.,denom)
-
-def ft19(tf): # not applicable to text classification
-    pass
-    # qtf = ? not applicable to text classification
-    # numer = multiply(k3+1.,qtf)
-    # denom = addition(qtf, k3)
-    # return division(numer, denom)
-
-def ft20(tf): # not applicable to text classification
-    pass
-    # qtf = ?
-    # maxqtf = ?
-    # rows,cols = qtf.nonzero()
-    # qtf[rows, cols] = 0.5 + ((0.5 + qtf[rows, cols]) / maxqtf[rows])
-    # return qtf
-
-# constant random float in [0., 99.]
-def ct21_float(tf=None):
-    def _constant():
-        return np.random.rand()*100.0
-    return _constant
-
-
-# ----------------------------------------------------------------
-# Operations:
-# ----------------------------------------------------------------
-
-def logarithm(x):
-    if issparse(x):
-        if x.nnz > 0:
-            if x.nnz == 0: return x
-            x = x.copy()
-            rows, cols = x.nonzero()
-            x[rows, cols] = np.log(np.abs(x[rows,cols]))
-            x.eliminate_zeros()
-        return x
-
-    else:
-        return np.log(np.abs(x))
-
-def addition(x, y):
-    if isinstance(x, float): # float + ? ---
-        if issparse(y):
-            return addition(y,x)
-        else: #y is float or any dense array
-            return x+y
-    elif issparse(x): # csr + ? ---
-        if issparse(y): # csr + csr
-            return x+y
-        else:
-            if x.nnz == 0: return x
-            z = x.copy()
-            rows, cols = x.nonzero()
-            if isinstance(y, float):  # csr + float
-                z[rows, cols] += y
-            else: # csr + dense
-                r,c = y.shape
-                if r == 1: # csr + dense-row
-                    y_ = y[0, cols]
-                elif c == 1: # csr + dense-col
-                    y_ = y[rows, 0]
-                else: # csr + dense-full
-                    y_ = y[rows, cols]
-                z[rows, cols] += np.asarray(y_).flatten()
-            return z
-    else: # dense + ?
-        if isinstance(y, float) or issparse(y):
-            return addition(y, x)
-        if x.shape == y.shape:
-            return x+y
-        else:
-            if ALLOW_DENSIFICATION:
-                xr, xc = x.shape
-                yr, yc = y.shape
-                nr, nc = max(xr,yr), max(xc, yc)
-                x = __tile_to_shape(x, (nr, nc))
-                y = __tile_to_shape(y, (nr, nc))
-                return x+y
-            else:
-                raise ValueError('unallowed operation')
-
-
-def __tile_to_shape(x, shape):
-    nr, nc = shape
-    r,c = x.shape
-    if r==nr and c==nc:
-        return x
-    elif r==1 and c==nc:
-        return np.tile(x, (nr, 1))
-    elif r==nr and c==1:
-        return np.tile(x, (1, nc))
-    else:
-        raise ValueError('format error')
-
-def multiplication(x, y):
-    if isinstance(x, float): # float * ? ---
-        if issparse(y):
-            return multiplication(y,x)
-        else: #y is float or any dense array
-            return np.multiply(x, y)
-    elif issparse(x): # csr * ? ---
-        if issparse(y): # csr * csr
-            return x.multiply(y)
-        else:
-            if x.nnz == 0: return x
-            z = x.copy()
-            rows, cols = x.nonzero()
-            if isinstance(y, float):  # csr * float
-                z[rows, cols] *= y
-            else: # csr * dense
-                r,c = y.shape
-                if r == 1: # csr * dense-row
-                    y_ = y[0, cols]
-                elif c == 1: # csr * dense-col
-                    y_ = y[rows, 0]
-                else: # csr * dense-full
-                    y_ = y[rows, cols]
-                z[rows, cols] = np.multiply(z[rows, cols], np.asarray(y_).flatten())
-            return z
-    else: # dense * ?
-        if isinstance(y, float) or issparse(y):
-            return multiplication(y, x)
-        if x.shape == y.shape:
-            return np.multiply(x,y)
-        else:
-            if ALLOW_DENSIFICATION:
-                xr, xc = x.shape
-                yr, yc = y.shape
-                nr, nc = max(xr,yr), max(xc, yc)
-                x = __tile_to_shape(x, (nr, nc))
-                y = __tile_to_shape(y, (nr, nc))
-                return np.multiply(x,y)
-            else:
-                raise ValueError('unallowed operation')
-
-def division(x, y):
-    if isinstance(y,float) and y==0: raise ValueError('division by 0')
-    if isinstance(x, float): # float / ? ---
-        if x == 0.: return 0.
-        if isinstance(y, float):
-            return x/y
-        if issparse(y):
-            if y.nnz == 0: return x
-            z = y.copy()
-            rows, cols = z.nonzero()
-            z[rows,cols] = x / z[rows,cols]
-            return z
-        else: #y is any dense array
-            z = np.divide(x, y, where=y!=0)
-            z[y==0] = 0. # where y==0 np places a 1
-            return z
-    elif issparse(x): # csr / ? ---
-        if issparse(y): # csr / csr
-            if y.nnz == 0: return x
-            z = y.copy()
-            rows, cols = y.nonzero()
-            z[rows, cols] = np.divide(x[rows,cols],y[rows,cols]) #y[rows,cols] come from nonzero()
-        else:
-            if x.nnz == 0: return x
-            z = x.copy()
-            rows, cols = x.nonzero()
-            if isinstance(y, float):  # csr / float
-                z[rows, cols] = np.divide(x[rows, cols], y) # y is nonzero
-            else: # csr / dense
-                r,c = y.shape
-                if r == 1: # csr / dense-row
-                    denom = y[0, cols]
-                elif c == 1: # csr / dense-col
-                    denom = y[rows, 0]
-                else: # csr / dense-full
-                    denom = y[rows, cols]
-                denom = np.asarray(denom).flatten()
-                zs = np.divide(x[rows, cols].flatten(), denom, where=denom!=0).reshape(1,-1)
-                zs[0,denom==0] = 0. # where y==0 np places a 1
-                z[rows, cols] = zs
-        z.eliminate_zeros()
-        return z
-    else: # dense / ?
-        if isinstance(y, float):
-            return np.divide(x,y)
-        elif issparse(y):
-            if y.nnz == 0: return x
-            z = y.copy()
-            rows, cols = y.nonzero()
-            r, c = x.shape
-            if r == 1:  # dense-row / csr
-                numer = x[0, cols]
-            elif c == 1:  # dense-col / csr
-                numer = x[rows, 0]
-            else:  # dense-full / csr
-                numer = x[rows, cols]
-            numer = np.asarray(numer).flatten()
-            denom = np.asarray(y[rows, cols]).flatten()
-            z[rows, cols] = np.divide(numer, denom) # denom comes from nonzero()
-            z.eliminate_zeros()
-            return z
-        if x.shape == y.shape:
-            zs = np.divide(x, y, where=y!=0)
-            zs[y==0]=0.
-            return zs
-        else:
-            if ALLOW_DENSIFICATION:
-                xr, xc = x.shape
-                yr, yc = y.shape
-                nr, nc = max(xr,yr), max(xc, yc)
-                x = __tile_to_shape(x, (nr, nc))
-                y = __tile_to_shape(y, (nr, nc))
-                return division(x,y)
-            else:
-                raise ValueError('unallowed operation')
+MAX_TREE_DEPTH = 15
 
 # ----------------------------------------------------------------
 # Collection Loader
@@ -485,9 +60,6 @@ class Operation:
 
     def __call__(self, *args, **kwargs):
         assert len(args)==self.nargs, 'wrong number of arguments'
-        # if None in args:
-        #
-        #     return None
         return self.operation(*args)
 
     def __str__(self):
@@ -506,6 +78,7 @@ class Terminal:
 
     def isconstant(self):
         return self.name == ct21_float.__name__
+
 
 class Tree:
     def __init__(self, node=None):
@@ -551,36 +124,26 @@ class Tree:
             else:
                 return eval_dict[self.node.name].terminal
         else:
-            args = []
-
-            for t in self.branches:
-                result = t(eval_dict)
-                if result is None:
-                    print('Node {} returned None'.format(t))
-                args.append(result)
-            ret = self.node(*args)
-            # print('running ' + str(self))
-            # if isinstance(ret, float):
-            #     print('return {}'.format(ret))
-            # else:
-            #     print('return {} {}'.format(ret.shape, "sparse" if issparse(ret) else "dense"))
-            return ret
-            #return self.node(*[t(eval_dict) for t in self.branches])
+            args = [t(eval_dict) for t in self.branches]
+            return self.node(*args)
 
     def fitness(self, eval_dict, ytr, yva):
         if self.fitness_score is None:
-            try:
-                Xtr_w = self()
-                if isinstance(Xtr_w, float) or min(Xtr_w.shape) == 1: #non valid element, either a float, a row-vector or a colum-vector, not a full matrix
-                    self.fitness_score = 0
-                else:
-                    Xva_w = self(eval_dict)
-                    logreg = LogisticRegression()
-                    logreg.fit(Xtr_w, ytr)
-                    yva_ = logreg.predict(Xva_w)
-                    self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
-            except Exception: # some individuals may generate Inf or too large values
+            if MAX_TREE_DEPTH is not None and self.depth() > MAX_TREE_DEPTH:
                 self.fitness_score = 0
+            else:
+                try:
+                    Xtr_w = self()
+                    if isinstance(Xtr_w, float) or min(Xtr_w.shape) == 1: #non valid element, either a float, a row-vector or a colum-vector, not a full matrix
+                        self.fitness_score = 0
+                    else:
+                        Xva_w = self(eval_dict)
+                        logreg = LogisticRegression()
+                        logreg.fit(Xtr_w, ytr)
+                        yva_ = logreg.predict(Xva_w)
+                        self.fitness_score = f1_score(y_true=yva, y_pred=yva_, average='binary', pos_label=1)
+                except Exception: # some individuals may generate Inf or too large values
+                    self.fitness_score = 0
         return self.fitness_score
 
     def preorder(self):
@@ -615,7 +178,6 @@ def get_terminals(X, slope_t15=None, slope_t16=None, slope_t17=None, asdict=Fals
         terminals = {t.name:t for t in terminals}
 
     return terminals
-
 
 
 def random_tree(max_length, exact_length, operation_pool, terminal_pool):
@@ -729,60 +291,4 @@ def crossover(population, rate_c=0.9, k=6): #tournament selection
         new_population.append(child2)
 
     return new_population
-
-
-
-if __name__ == '__main__':
-    dataset = 'ohsumed'
-    pos_cat = 0
-    fs = 0.1
-    Xtr, ytr, Xva, yva, Xte, yte = loadCollection(dataset, pos_cat, fs)
-
-    sparse_mat = ft01(Xtr)
-    col = ft06(Xtr)
-    row = ft13(Xtr)
-    num = 20.
-
-    tested = 0
-    failed = 0
-
-    def test_op(x,y,op=division):
-        global tested, failed
-        try:
-            z = op(x,y)
-            tested += 1
-        except Exception:
-            z = None
-            failed+=1
-        print('tested',tested,'failed',failed)
-        return z
-
-    #dense = addition(row,col)
-
-    c = test_op(sparse_mat,sparse_mat)
-    c = test_op(sparse_mat,col)
-    c = test_op(sparse_mat,row)
-    c = test_op(sparse_mat,num)
-    #c = test_op(sparse_mat,dense)
-
-    c = test_op(row,num)
-    c = test_op(row,sparse_mat)
-    #c = test_op(row,dense)
-    c = test_op(row,row)
-
-    c = test_op(col,num)
-    c = test_op(col,sparse_mat)
-    #c = test_op(col,dense)
-    c = test_op(col,row)
-    c = test_op(col,col)
-
-    # c = test_op(dense,num)
-    # c = test_op(dense,sparse_mat)
-    # c = test_op(dense,dense)
-    # c = test_op(dense,row)
-    # c = test_op(dense,col)
-
-
-
-
 
