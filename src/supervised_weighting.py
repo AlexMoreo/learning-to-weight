@@ -18,6 +18,7 @@ def main(argv=None):
         outname = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf==True else '' )+('%s_C%d_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
                   (FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
                    FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run))
+    print(outname)
 
     # check if the vector has already been calculated
     err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
@@ -342,7 +343,7 @@ if __name__ == '__main__':
     flags.DEFINE_boolean('debug', False, 'Set to true for fast data load, and debugging')
     flags.DEFINE_boolean('forcepos', True, 'Forces the idf-like part to be non-negative (default True)')
     flags.DEFINE_string('computation', 'local', 'Computation mode, see documentation (default local)')
-    flags.DEFINE_string('learntf', False, 'Learns the tf-like function (default False)')
+    flags.DEFINE_boolean('learntf', False, 'Learns the tf-like function (default False)')
     flags.DEFINE_string('plotmode', 'off', 'Select the mode of plotting for the the idf-like function learnt; available modes include:'
                                             '\n off: deactivated (default)'
                                             '\n show: shows the plot during training'
