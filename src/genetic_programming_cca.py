@@ -92,8 +92,9 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', help='Output dir for learned vectors (default "../vectors").', type=str, default='../vectors')
     parser.add_argument('--run', help='Number of run, and seed used to replicate experiments (default 0).', type=int, default=0)
     parser.add_argument('--populationsize', help='Size of the population (default 200).', type=int, default=200)
-    parser.add_argument('--maxdepth', help='Max depth of the initial population (default 5).', type=int, default=5)
+    parser.add_argument('--initdepth', help='Max depth of the initial population (default 5).', type=int, default=5)
     parser.add_argument('--maxiter', help='Maximum number of iterations (default 30).', type=int, default=30)
+    parser.add_argument('--maxdepth', help='Max depth allowed for a tree (default 15).', type=int, default=15)
 
     args = parser.parse_args()
     args.outname = 'GenCCA_' + args.dataset[:3] + '_C' + str(args.cat) + '_R' + str(args.run) + '.pickle'
