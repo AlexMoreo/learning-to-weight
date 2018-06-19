@@ -15,7 +15,7 @@ def main(argv=None):
 
     outname = FLAGS.outname
     if not outname:
-        outname = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf else '' )+('%s_C%d_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
+        outname = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf==True else '' )+('%s_C%d_FS%.2f_H%d_lr%.5f_O%s_N%s_n%s_P%s_R%d.pickle' % \
                   (FLAGS.dataset[:3], FLAGS.cat, FLAGS.fs, FLAGS.hidden, FLAGS.lrate, FLAGS.optimizer,
                    FLAGS.normalize, FLAGS.forcepos, FLAGS.pretrain, FLAGS.run))
 
@@ -55,7 +55,7 @@ def main(argv=None):
         feat_info = tf.constant(np.concatenate(feat_corr_info), dtype=tf.float32)
 
         def tf_like(x_raw):
-            if FLAGS.learntf:
+            if FLAGS.learntf==True:
                 print('learning the tf-like function')
                 tf2h, _ = get_projection_weights([1, FLAGS.hiddentf], 'tf2h_weights', bias=False)
                 h2tf, _ = get_projection_weights([FLAGS.hiddentf, 1], 'h2tf_weights', bias=False)
@@ -297,7 +297,7 @@ def main(argv=None):
         test_x, test_y   = data.get_test_set()
         test_x_weighted = weight_docs(test_x)
 
-        vectorizer_name = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf else '')
+        vectorizer_name = 'LtoW_'+FLAGS.computation+('learnTF' if FLAGS.learntf==True else '')
         run_params_dic = {'num_features': data.num_features(),
                           'date': strftime("%d-%m-%Y", gmtime()),
                           'hiddensize': FLAGS.hidden,
