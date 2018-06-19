@@ -14,9 +14,6 @@ from sklearn.metrics import f1_score
 from cca_operations import *
 from cca_terminals import *
 
-
-MAX_TREE_DEPTH = 15
-
 # ----------------------------------------------------------------
 # Collection Loader
 # ----------------------------------------------------------------
@@ -81,6 +78,7 @@ class Terminal:
 
 
 class Tree:
+    MAX_TREE_DEPTH = 15
     def __init__(self, node=None):
         assert isinstance(node, Operation) or isinstance(node, Terminal), 'invalid node'
         self.node = node
@@ -129,7 +127,7 @@ class Tree:
 
     def fitness(self, eval_dict, ytr, yva):
         if self.fitness_score is None:
-            if MAX_TREE_DEPTH is not None and self.depth() > MAX_TREE_DEPTH:
+            if Tree.MAX_TREE_DEPTH is not None and self.depth() > Tree.MAX_TREE_DEPTH:
                 self.fitness_score = 0
             else:
                 try:

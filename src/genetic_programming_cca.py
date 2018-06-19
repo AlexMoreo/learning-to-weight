@@ -23,7 +23,7 @@ def main(args):
 
 
     initial_population_size = args.populationsize
-    max_depth = args.maxdepth
+    max_depth = args.initdepth
     max_populations = args.maxiter
 
     #np.random.seed(1)
@@ -98,7 +98,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     args.outname = 'GenCCA_' + args.dataset[:3] + '_C' + str(args.cat) + '_R' + str(args.run) + '.pickle'
-    MAX_TREE_DEPTH=args.maxdepth
+
+    Tree.MAX_TREE_DEPTH=args.maxdepth
 
     if os.path.exists(os.path.join(args.outdir, args.outname)):
         print("Vector file {} already computed in dir {}. Skipping.".format(args.outname, args.outdir))
