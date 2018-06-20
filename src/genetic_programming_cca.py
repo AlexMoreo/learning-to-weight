@@ -10,61 +10,78 @@ def main(args):
 
     print('Loading collection')
     Xtr,ytr,Xva,yva,Xte,yte = loadCollection(dataset=args.dataset, pos_cat=args.cat, fs=args.fs)
+    trpos, vapos, tepos = ytr.sum(),yva.sum(),yte.sum()
+    print('Positive documents in: Xtr={} Xva={} Xte={}'.format(trpos, vapos, tepos))
+    if trpos <= 3 or vapos <= 3:
+        print('avoiding optimization due to the lack sufficient positive examples; returing tfidf versions instead')
+        data = TextCollectionLoader(dataset=args.dataset, vectorizer='tfidf', rep_mode='sparse',
+                                    positive_cat=args.cat,feat_sel=args.fs)
+        Xtr_weighted, ytr = data.get_train_set()
+        Xva_weighted, yva = data.get_validation_set()
+        Xte_weighted, yte = data.get_test_set()
+        formula = 'tfidf'
+        elapsed_time = 0
 
-    t_init = time.time()
-    print('Initializing terminals and operations')
-    slope_t15 = find_best_slope_t15(Xtr, ytr, Xva, yva)
-    slope_t16 = find_best_slope_t16(Xtr, ytr, Xva, yva)
-    slope_t17 = find_best_slope_t17(Xtr, ytr, Xva, yva)
+    else:
+        t_init = time.time()
+        print('Initializing terminals and operations')
+        slope_t15 = find_best_slope_t15(Xtr, ytr, Xva, yva)
+        slope_t16 = find_best_slope_t16(Xtr, ytr, Xva, yva)
+        slope_t17 = find_best_slope_t17(Xtr, ytr, Xva, yva)
 
-    operation_pool = get_operations()
-    Xtr_terminals_pool = get_terminals(Xtr, slope_t15, slope_t16, slope_t17)
-    Xva_terminals = get_terminals(Xva, slope_t15, slope_t16, slope_t17, asdict=True)
+        operation_pool = get_operations()
+        Xtr_terminals_pool = get_terminals(Xtr, slope_t15, slope_t16, slope_t17)
+        Xva_terminals = get_terminals(Xva, slope_t15, slope_t16, slope_t17, asdict=True)
 
 
-    initial_population_size = args.populationsize
-    max_depth = args.initdepth
-    max_populations = args.maxiter
+        initial_population_size = args.populationsize
+        max_depth = args.initdepth
+        max_populations = args.maxiter
 
-    #np.random.seed(1)
-    print('Init')
-    population = ramped_half_and_half_method(initial_population_size, max_depth, operation_pool, Xtr_terminals_pool)
+        #np.random.seed(1)
+        print('Init')
+        population = ramped_half_and_half_method(initial_population_size, max_depth, operation_pool, Xtr_terminals_pool)
 
-    epoch = 0
-    while epoch < max_populations:
-        print('Population {}'.format(epoch))
+        epoch = 0
+        while epoch < max_populations:
+            print('Population {}'.format(epoch))
 
-        # compute the fitness for each individual
-        print('\tComputing fitness')
-        fitness_population(population, Xva_terminals, ytr, yva, show=True)
+            # compute the fitness for each individual
+            print('\tComputing fitness')
+            fitness_population(population, Xva_terminals, ytr, yva, show=True)
 
-        # create new population
-        print('\tReproduction')
-        new_population = reproduction(population, rate_r=0.05)
+            # create new population
+            print('\tReproduction')
+            new_population = reproduction(population, rate_r=0.05)
 
-        print('\tCrossover')
-        new_population.extend(crossover(population, rate_c=0.9))
+            print('\tCrossover')
+            new_population.extend(crossover(population, rate_c=0.9))
 
-        print('\tMutation')
-        new_population.extend(mutate(population, operation_pool, Xtr_terminals_pool, rate_m=0.05))
+            print('\tMutation')
+            new_population.extend(mutate(population, operation_pool, Xtr_terminals_pool, rate_m=0.05))
 
-        population = new_population
-        epoch+=1
+            population = new_population
+            epoch+=1
 
-    best = fitness_population(population, Xva_terminals, ytr, yva, show=True)
-    elapsed_time = time.time() - t_init
+        best = fitness_population(population, Xva_terminals, ytr, yva, show=True)
+        elapsed_time = time.time() - t_init
 
-    print('Best individuals:')
-    for p in population[:5]:
-        print(p)
-        print()
+        print('Best individuals:')
+        for p in population[:5]:
+            print(p)
+            print()
 
-    Xte_terminals = get_terminals(Xte, slope_t15, slope_t16, slope_t17, asdict=True)
+        Xte_terminals = get_terminals(Xte, slope_t15, slope_t16, slope_t17, asdict=True)
+
+        Xtr_weighted = best()
+        Xva_weighted = best(Xva_terminals)
+        Xte_weighted = best(Xte_terminals)
+        formula = str(best).replace('\n', ' ').replace('\t', '')
 
     vectorizer_name = 'GenCCA'
     run_params_dic = {'num_features': Xtr.shape[1],
                       'date': strftime("%d-%m-%Y", gmtime()),
-                      'notes': str(best).replace('\n', ' ').replace('\t', ''),
+                      'notes': formula,
                       'run': args.run,
                       'learn_tf': True,
                       'learn_idf': True,
@@ -73,11 +90,10 @@ def main(args):
                       'iterations':args.maxiter}
 
     wv = WeightedVectors(vectorizer=vectorizer_name, from_dataset=args.dataset, from_category=args.cat,
-                         trX=best(), trY=ytr,
-                         vaX=best(Xva_terminals), vaY=yva,
-                         teX=best(Xte_terminals), teY=yte,
+                         trX=Xtr_weighted, trY=ytr,
+                         vaX=Xva_weighted, vaY=yva,
+                         teX=Xte_weighted, teY=yte,
                          run_params_dic=run_params_dic)
-
     wv.pickle(args.outdir, args.outname)
     print 'Weighted vectors saved at ' + args.outname
 
