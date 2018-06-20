@@ -238,19 +238,6 @@ class TextCollectionLoader:
     def get_test_set(self):
         return self.__get_set(self.test_vec, self.test.target, self.test_indexes)
 
-    def train_batch(self, batch_size=64):
-        if self.offset == 0 and self.epoch == 0: random.shuffle(self.train_indexes)
-        to_pos = min(self.offset + batch_size, self.num_tr_documents())
-        batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]
-        batch_rep = self._batch_getter(batch)
-        labels = self.devel.target[self.train_indexes[self.offset:to_pos]]
-        self.offset += batch_size
-        if self.offset >= self.num_tr_documents():
-            self.offset = 0
-            self.epoch += 1
-            random.shuffle(self.train_indexes)
-        return batch_rep, labels
-
     def val_batch(self):
         return self.get_validation_set()
 

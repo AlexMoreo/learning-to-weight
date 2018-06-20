@@ -117,6 +117,8 @@ if __name__ == '__main__':
 
     Tree.MAX_TREE_DEPTH=args.maxdepth
 
+
+
     if os.path.exists(os.path.join(args.outdir, args.outname)):
         print("Vector file {} already computed in dir {}. Skipping.".format(args.outname, args.outdir))
         sys.exit(1)

@@ -22,7 +22,10 @@ n_jobs = -1
 def featsel(trX, trY, teX, n_feat):
     print('Selecting top-%d features from %d...'%(n_feat, trX.shape[1]))
     fs = SelectKBest(chi2, k=n_feat)
-    trX_red = fs.fit_transform(trX, trY)
+    trX_ = trX.copy()
+    trX_[trX_.nonzero()]=1
+    fs.fit(trX_, trY)
+    trX_red = fs.transform(trX)
     teX_red = fs.transform(teX)
     return trX_red, teX_red
 
@@ -211,7 +214,6 @@ def random_forest(data, results):
 
 def multinomial_nb(data, results):
     def swap_vectors_sign(data):
-        if data.vectorizer != 'learned': return
         def mainly_negative_nonzeros(csr_m):
             values = np.array(csr_m[csr_m.nonzero()])[0]
             negatives = len(values[values<0])
@@ -340,18 +342,14 @@ if __name__ == '__main__':
     parser.add_argument("-m", "--method", help="selects one single vectorizer method to run from "+str(TextCollectionLoader.valid_vectorizers),
                         type=str, default="all")
     parser.add_argument("--fs", help="feature selection ratio", type=float, default=0.1)
-    parser.add_argument("--no-linearsvm", help="removes the linearsvm classifier from the benchmark", default=False, action="store_true")
-    parser.add_argument("--no-multinomialnb", help="removes the multinomialnb classifier from the benchmark", default=False, action="store_true")
-    parser.add_argument("--no-randomforest", help="removes the randomforest classifier from the benchmark", default=False, action="store_true")
-    parser.add_argument("--no-logisticregression", help="removes the logisticregression classifier from the benchmark", default=False, action="store_true")
-    parser.add_argument("--no-knn", help="removes the knn classifier from the benchmark", default=False, action="store_true")
+    parser.add_argument("-l", "--learner", help="selects the learner with which the vectors are to be processed (default 'all')", default='all', type=str)
     args = parser.parse_args()
 
-    benchmarks = dict({'linearsvm': not args.no_linearsvm,
-                       'multinomialnb': not args.no_multinomialnb,
-                       'randomforest': not args.no_randomforest,
-                       'logisticregression': not args.no_logisticregression,
-                       'knn': not args.no_knn})
+    benchmarks = dict({'linearsvm': args.learner in ['all', 'linearsvm'],
+                       'multinomialnb': args.learner in ['all', 'multinomialnb'],
+                       'randomforest': args.learner in ['all', 'randomforest'],
+                       'logisticregression': args.learner in ['all', 'logisticregression'],
+                       'knn': args.learner in ['all', 'knn']})
 
     print("Loading result file from "+args.resultfile)
 
