@@ -188,6 +188,19 @@ class TextCollectionLoader:
         test_vec.sort_indices()
         return devel_vec, test_vec
 
+    def train_batch(self, batch_size=64):
+        if self.offset == 0 and self.epoch == 0: random.shuffle(self.train_indexes)
+        to_pos = min(self.offset + batch_size, self.num_tr_documents())
+        batch = self.devel_vec[self.train_indexes[self.offset:to_pos]]
+        batch_rep = self._batch_getter(batch)
+        labels = self.devel.target[self.train_indexes[self.offset:to_pos]]
+        self.offset += batch_size
+        if self.offset >= self.num_tr_documents():
+            self.offset = 0
+            self.epoch += 1
+            random.shuffle(self.train_indexes)
+        return batch_rep, labels
+
     #virtually remove invalid documents (documents without any non-zero feature)
     def _get_doc_indexes(self, vector_set):
         all_indexes = np.arange(vector_set.shape[0])

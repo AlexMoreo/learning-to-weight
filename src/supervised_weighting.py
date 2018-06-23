@@ -335,7 +335,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
-    flags.DEFINE_integer('hiddentf', 1000, 'Number of hidden nodes for tf-like param, ignored if learntf=False (default 100).')
+    flags.DEFINE_integer('hiddentf', 100, 'Number of hidden nodes for tf-like param, ignored if learntf=False (default 100).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes L2 normalization to the document vectors (default True)')

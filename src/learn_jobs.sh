@@ -1,17 +1,23 @@
 #!/bin/bash
 set -x
 
-learn='python supervised_weighting.py'
+learn='python2 supervised_weighting.py'
 
-for dataset in 'ohsumed' #'ohsumed' #'20newsgroups' #'reuters21578'
+
+for  run in 0
 do
-    for cat in {0..4}
+
+for dataset in 'reuters21578' # '20newsgroups' 'ohsumed'
+do
+    for cat in {0..115}
     do
-        #$learn --dataset "$dataset" --cat "$cat" --learntf True
-        #$learn --dataset "$dataset" --cat "$cat"
-        pass
+        $learn --dataset "$dataset" --cat "$cat" --learntf True --forcepos False --run $run --outdir "../vectors_tf"
+        $learn --dataset "$dataset" --cat "$cat" --learntf True --forcepos True --run $run --outdir "../vectors_tf"
+        #pass
     done
 
-    python classification_benchmark.py -v ../vectors -r ../results/replication_ohsumed.csv --no-randomforest --no-knn --no-logisticregression --no-multinomialnb
-    #python classification_benchmark.py -d $dataset -m tfidf -r ../results/replication_ohsumed_tfidf.csv --no-randomforest --no-knn --no-logisticregression --no-multinomialnb
 done
+
+done
+
+python2 classification_benchmark.py -v ../vectors_tf -r ../results/reuters21578_tf.csv
