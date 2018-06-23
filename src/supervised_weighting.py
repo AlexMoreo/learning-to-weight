@@ -27,8 +27,10 @@ def main(argv=None):
 
     # old code
     data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='count', rep_mode='dense', positive_cat=FLAGS.cat,feat_sel=FLAGS.fs)
-    data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    data.test_vec = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+    if not FLAGS.learntf:
+	print('l1 normalization')
+    	data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+    	data.test_vec = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     # updated code    #data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='l1', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel, norm=None)
 
 
@@ -333,7 +335,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('cat', 0, 'Code of the positive category (default 0).')
     flags.DEFINE_integer('batchsize', 100, 'Size of the batches. Set to -1 to avoid batching (default 100).')
     flags.DEFINE_integer('hidden', 1000, 'Number of hidden nodes (default 1000).')
-    flags.DEFINE_integer('hiddentf', 100, 'Number of hidden nodes for tf-like param, ignored if learntf=False (default 100).')
+    flags.DEFINE_integer('hiddentf', 1000, 'Number of hidden nodes for tf-like param, ignored if learntf=False (default 100).')
     flags.DEFINE_float('lrate', .005, 'Initial learning rate (default .005)') #3e-4
     flags.DEFINE_string('optimizer', 'adam', 'Optimization algorithm in ["sgd", "adam", "rmsprop"] (default adam)')
     flags.DEFINE_boolean('normalize', True, 'Imposes L2 normalization to the document vectors (default True)')
