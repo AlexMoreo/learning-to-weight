@@ -177,7 +177,7 @@ def plotTF(x,y, plotpath, title=''):
     lga = 1 + np.log(x)
     lgb = np.log(1 + x)
 
-    ax.plot(x, y / y.max(), label='learned')
+    ax.plot(x, y / y.max(), label='learned', linewidth=2.0)
     ax.plot(x, lga / lga.max(), label='$1+\\log\\left(f_{td}\\right)$')
     ax.plot(x, lgb / lgb.max(), label='$\\log\\left(1+f_{td}\\right)$')
     ax.plot(x, x / x.max(), label='$f_{td}$')

@@ -1,3 +1,5 @@
+import os
+os.environ['MATPLOTLIB_USE'] = 'Agg'
 from time import gmtime, strftime
 from classification_benchmark_multi import *
 from feature_selection import tsr_function
