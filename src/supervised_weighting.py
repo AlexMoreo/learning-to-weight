@@ -2,6 +2,7 @@ from time import gmtime, strftime
 from classification_benchmark_multi import *
 from feature_selection import tsr_function
 from utils.tf_helpers import *
+from utils.plot_function import *
 
 def get_tpr_fpr_statistics(data):
     nF = data.num_features()
@@ -21,18 +22,19 @@ def main(argv=None):
     print(outname)
 
     # check if the vector has already been calculated
-    err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
+    # err_exception(os.path.exists(join(FLAGS.outdir, outname)), 'Vector file %s already exists!' % outname)
 
     init_time = time.time()
 
     # old code
     data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='count', rep_mode='dense', positive_cat=FLAGS.cat,feat_sel=FLAGS.fs)
     if not FLAGS.learntf:
-	print('l1 normalization')
-    	data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
-    	data.test_vec = normalize(data.test_vec, norm='l1', axis=1, copy=False)
+        print('l1 normalization')
+        data.devel_vec = normalize(data.devel_vec, norm='l1', axis=1, copy=False)
+        data.test_vec = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     # updated code    #data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='l1', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel, norm=None)
 
+    max_tf = data.devel_vec.max()
 
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence(0)))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence(0)))
@@ -60,14 +62,16 @@ def main(argv=None):
         def tf_like(x_raw):
             if FLAGS.learntf==True:
                 print('learning the tf-like function')
-                tf2h, _ = get_projection_weights([1, FLAGS.hiddentf], 'tf2h_weights', bias=False)
-                h2tf, _ = get_projection_weights([FLAGS.hiddentf, 1], 'h2tf_weights', bias=False)
+                tf2h, tf2h_b = get_projection_weights([1, FLAGS.hiddentf], 'tf2h_weights')
+                h2tf, h2tf_b = get_projection_weights([FLAGS.hiddentf, 1], 'h2tf_weights')
                 tf_tensor = tf.reshape(x_raw, shape=[-1, 1])
-                tf_hidden = tf.nn.dropout(tf.nn.relu(tf.matmul(tf_tensor, tf2h)), keep_prob=keep_p)
-                tf_like = tf.matmul(tf_hidden, h2tf)
-                return tf.reshape(tf_like, shape=[-1, x_size])
+                tf_hidden = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(tf_tensor, tf2h), tf2h_b)), keep_prob=keep_p)
+                tf_factor = tf.nn.bias_add(tf.matmul(tf_hidden, h2tf), h2tf_b)
+                tf_factor = tf_factor * tf.sign(tf_factor)
+                return tf.reshape(tf_factor, shape=[-1, x_size])
             else:
-                return tf.log(x_raw + 1)
+                tf_factor = tf.log(x_raw + 1)
+                return tf_factor
 
         def local_idflike(info_arr):
             filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
@@ -94,7 +98,9 @@ def main(argv=None):
             elif FLAGS.computation == 'global': idf_ = global_idflike(feat_info)
             return tf.nn.sigmoid(idf_) if FLAGS.forcepos else idf_
 
-        weighted_layer = tf.multiply(tf_like(x), idf_like(feat_info))
+        tf_factor = tf_like(x)
+        idf_factor = idf_like(feat_info)
+        weighted_layer = tf.multiply(tf_factor, idf_factor)
         normalized = tf.nn.l2_normalize(weighted_layer, dim=1) if FLAGS.normalize else weighted_layer
         logis_w, logis_b = get_projection_weights([data.num_features(), 1], 'logistic')
         logits = tf.squeeze(tf.nn.bias_add(tf.matmul(normalized, logis_w), logis_b))
@@ -171,8 +177,6 @@ def main(argv=None):
         n_params = count_trainable_parameters()
         print ('Number of model parameters: %d' % (n_params))
         tf.initialize_all_variables().run()
-        #tensorboard = TensorboardData()
-        #tensorboard.open(FLAGS.summariesdir, 'sup_weight', session.graph)
 
         # pre-train -------------------------------------------------
         idf_steps = 0
@@ -193,8 +197,6 @@ def main(argv=None):
                 idf_steps += 1
 
                 if step % show_step == 0:
-                    #sum = idf_summaries.eval({x_func: x_, y_func: y_, keep_p:drop_keep_p})
-                    #tensorboard.add_train_summary(sum, step)
                     l_ave /= show_step
                     print('[step=%d] idf-loss=%.7f' % (step, l_ave))
                     if l_ave < epsilon:
@@ -226,8 +228,6 @@ def main(argv=None):
             log_steps += 1
 
             if step % show_step == 0:
-                #sum = end2end_summaries.eval(feed_dict=tr_dict)
-                #tensorboard.add_train_summary(sum, step+idf_steps)
                 tr_phase = 'logistic' if in_logistic_phase else 'end2end'
                 print('[step=%d][ep=%d][op=%s] loss=%.10f' % (step, data.epoch, tr_phase, l_ave / show_step))
                 l_ave = 0.0
@@ -269,7 +269,13 @@ def main(argv=None):
                 print('Max validation score reached. End of training.')
                 break
 
-        #tensorboard.close()
+        if FLAGS.learntf:
+            tfx = np.arange(start=0,stop=batch_size*x_size,step=1).reshape(batch_size,x_size)*max_tf/(batch_size*x_size)
+            tfy = session.run(tf_factor, feed_dict=as_feed_dict((tfx,np.zeros(batch_size))))
+            title = '{} ({})'.format(FLAGS.dataset.title(), data.cat_name)
+            plotTF(tfx, tfy, '../plots/tf_{}_{}_C{}.pdf'.format('sigma' if FLAGS.forcepos else 'I', FLAGS.dataset, FLAGS.cat), title=title)
+            #plotTF(tfx, -tfy, '../plots/tf_{}_{}_C{}_inv.pdf'.format('I', FLAGS.dataset, FLAGS.cat), title=title)
+
 
         # output -------------------------------------------------
         print 'Test evaluation:'

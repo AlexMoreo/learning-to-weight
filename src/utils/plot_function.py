@@ -171,3 +171,23 @@ class PlotTfIdf:
             plt.savefig(plotpath)
         self.plotcount += 1
 
+def plotTF(x,y, plotpath, title=''):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    x = x.flatten()*1.0
+    y = y.flatten()
+    lga = 1 + np.log(x)
+    lgb = np.log(1 + x)
+
+    ax.plot(x, y / y.max(), label='learned')
+    ax.plot(x, lga / lga.max(), label='$1+\\log\\left(f_{td}\\right)$')
+    ax.plot(x, lgb / lgb.max(), label='$\\log\\left(1+f_{td}\\right)$')
+    ax.plot(x, x / x.max(), label='$f_{td}$')
+    ax.grid()
+    ax.legend(loc=4)
+    ax.set_xlim(0, x.max())
+    ax.set_ylim(0, 1)
+    plt.ylabel('$dd(t,d)$')
+    plt.xlabel('$f_{td}$')
+    if title: plt.title(title)
+    plt.savefig(plotpath)

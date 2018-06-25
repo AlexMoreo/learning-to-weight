@@ -105,6 +105,7 @@ class TextCollectionLoader:
 
     # change class codes: positive class = 1, all others = 0, and set category names to 'positive' or 'negative'
     def binarize_classes(self):
+        self.cat_name = self.devel.target_names[self.positive_cat]
         self.devel.target = self.binarize_label_vector(self.devel.target, self.classification, self.positive_cat)
         self.test.target = self.binarize_label_vector(self.test.target, self.classification, self.positive_cat)
         self.devel.target_names = self.test.target_names = ['negative', 'positive']
