@@ -1,9 +1,7 @@
 import itertools
 import os
-
 import matplotlib
 import numpy as np
-
 from utils.helpers import *
 
 if 'MATPLOTLIB_USE' in os.environ:

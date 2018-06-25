@@ -377,7 +377,7 @@ if __name__ == '__main__':
 
     sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)  # set stdout to unbuffered
 
-    if FLAGS.plotmode != 'show':
+    if FLAGS.plotmode != 'show' or FLAGS.learntf==True:
         os.environ['MATPLOTLIB_USE'] = 'Agg'
     from utils.plot_function import PlotIdf
     tf.app.run()
