@@ -69,7 +69,7 @@ def main(argv=None):
                 tf_tensor = tf.reshape(x_raw, shape=[-1, 1])
                 tf_hidden = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(tf_tensor, tf2h), tf2h_b)), keep_prob=keep_p)
                 tf_factor = tf.nn.bias_add(tf.matmul(tf_hidden, h2tf), h2tf_b)
-                tf_factor = tf_factor * tf.sign(tf_factor)
+                tf_factor = tf_factor.multiply(tf.sign(x_raw)) # guarantees dd(t,d)=0 if t not in d
                 return tf.reshape(tf_factor, shape=[-1, x_size])
             else:
                 tf_factor = tf.log(x_raw + 1)
@@ -155,6 +155,7 @@ def main(argv=None):
             x_batch = x_docs[i * batch_size : (i + 1) * batch_size]
             weights.append(normalized.eval(feed_dict={x: x_batch, keep_p: 1.0}))
         weights = np.vstack(weights)
+        weights[x_docs==0]=0.
         return weights
 
     create_if_not_exists(FLAGS.checkpointdir)
