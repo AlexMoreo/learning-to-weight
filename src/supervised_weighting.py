@@ -69,11 +69,11 @@ def main(argv=None):
                 tf_tensor = tf.reshape(x_raw, shape=[-1, 1])
                 tf_hidden = tf.nn.dropout(tf.nn.relu(tf.nn.bias_add(tf.matmul(tf_tensor, tf2h), tf2h_b)), keep_prob=keep_p)
                 tf_factor = tf.nn.bias_add(tf.matmul(tf_hidden, h2tf), h2tf_b)
-                tf_factor = tf_factor.multiply(tf.sign(x_raw)) # guarantees dd(t,d)=0 if t not in d
-                return tf.reshape(tf_factor, shape=[-1, x_size])
+                tf_factor = tf.reshape(tf_factor, shape=[-1, x_size])
+                tf_factor = tf.multiply(tf_factor, tf.sign(x_raw)) # guarantees dd(t,d)=0 if t not in d
             else:
                 tf_factor = tf.log(x_raw + 1)
-                return tf_factor
+            return tf_factor
 
         def local_idflike(info_arr):
             filter_weights, filter_biases = get_projection_weights([info_by_feat, 1, FLAGS.hidden], 'local_filter')
