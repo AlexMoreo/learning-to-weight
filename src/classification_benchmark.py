@@ -215,11 +215,7 @@ def random_forest(data, results):
 def multinomial_nb(data, results):
     def swap_vectors_sign(data):
         def mainly_negative_nonzeros(csr_m):
-            values = np.array(csr_m[csr_m.nonzero()])[0]
-            negatives = len(values[values<0])
-            if negatives == 0: return False
-            positives = len(values[values>0])
-            return negatives > positives
+            return csr_m.sign().sum() < 0
         def swap_sign(csr_m):
             return csr_m.multiply(-1)
         def del_negatives(swapped):
