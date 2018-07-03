@@ -6,7 +6,7 @@ learn='python genetic_programming_cca.py'
 for  run in 0
 do
 
-for dataset in 'ohsumed' # 'reuters21578' '20newsgroups'
+for dataset in 'ohsumed' 'reuters21578' '20newsgroups'
 do
     for cat in {0..115}
     do
@@ -14,8 +14,8 @@ do
         #pass
     done
 
-    #python classification_benchmark.py -v ../vectors -r ../results/replication_ohsumed.csv --no-randomforest --no-knn --no-logisticregression --no-multinomialnb
-    #python classification_benchmark.py -d $dataset -m tfidf -r ../results/replication_ohsumed_tfidf.csv --no-randomforest --no-knn --no-logisticregression --no-multinomialnb
+    python classification_benchmark.py -v ../vectors_gen -r ../results/genetic.csv 
+    
 done
 
 done
