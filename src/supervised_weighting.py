@@ -36,7 +36,7 @@ def main(argv=None):
         data.test_vec = normalize(data.test_vec, norm='l1', axis=1, copy=False)
     # updated code    #data = TextCollectionLoader(dataset=FLAGS.dataset, vectorizer='l1', rep_mode='dense', positive_cat=pos_cat_code, feat_sel=feat_sel, norm=None)
 
-    max_tf = data.devel_vec.max()
+    max_tf = min(data.devel_vec.max(),50)#for the tf-like plot
 
     print("|Tr|=%d [prev+ %f]" % (data.num_tr_documents(), data.train_class_prevalence(0)))
     print("|Val|=%d [prev+ %f]" % (data.num_val_documents(), data.valid_class_prevalence(0)))
@@ -256,6 +256,8 @@ def main(argv=None):
                 print('[Test acc=%.3f%%, f1=%.3f, p=%.3f, r=%.3f]' % (acc, f1, p, r))
                 timeref = time.time()
 
+
+
             if FLAGS.plotmode=='vid' and step % plotsteps == 0:
                 plot.plot(step=step+idf_steps)
 
@@ -268,6 +270,7 @@ def main(argv=None):
                 else:
                     print('Early stop after %d validation steps without improvements' % last_improvement)
                     break
+
             if best_f1==1.0:
                 print('Max validation score reached. End of training.')
                 break
