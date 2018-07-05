@@ -8,7 +8,7 @@ from scipy.sparse import vstack
 
 def main(args):
 
-    print('Loading collection')
+    print('Loading collection...')
     Xtr,ytr,Xva,yva,Xte,yte = loadCollection(dataset=args.dataset, pos_cat=args.cat, fs=args.fs)
     trpos, vapos, tepos = ytr.sum(),yva.sum(),yte.sum()
     print('Positive documents in: Xtr={} Xva={} Xte={}'.format(trpos, vapos, tepos))
